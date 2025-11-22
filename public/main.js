@@ -67,6 +67,7 @@ socket.on('gameStarted', function(playerList) {
     document.getElementById('waitingOverlay').style.display="none";
 
     var audio = new Audio('audio/game-start.wav');
+    audio.volume = 0.2;
     audio.play();
 
     // Show/hide elements for in-game state

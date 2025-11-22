@@ -10,7 +10,7 @@ io.on('connection', onConnection);
 server.listen(port, () => console.log('listening on port ' + port));
 
 const maxPlayers = 8;
-const CARD_DRAW_DELAY_MS = 200;
+const CARD_DRAW_DELAY_MS = 300;
 var playDirection = -1;
 var currentPlayer;
 var currentColor;
