@@ -43,6 +43,11 @@ main {
     background: dodgerblue;
 }
 
+.btn:disabled, .game-btn:disabled {
+    background: gray;
+    cursor: not-allowed;
+}
+
 header h1 {
     padding: 10px;
     background: black;

@@ -14,6 +14,7 @@ let playerAName = null;
 let currentColor = null;
 let bootTargetId = null;
 let requiredPlay = [];
+let playersInLobby = [];
 
 const sidePanel = document.getElementById('side-panel');
 const collapseButton = document.getElementById('collapse-btn');
@@ -37,14 +38,32 @@ socket.on('isPlayerA', function() {
     isPlayerA = true;
     document.getElementById('btnStart').style.display="inline-block";
     document.getElementById('btnOptions').style.display="inline-block";
+
+    updateStartButtonState();
 });
+
+function updateStartButtonState() {
+    const startBtn = document.getElementById('btnStart');
+    const lobbyCount = playersInLobby.length;
+
+    if (!isPlayerA) return;
+
+    if (lobbyCount > 1) {
+        startBtn.disabled = false;
+        startBtn.value = 'Start New Match';
+    } else {
+        startBtn.disabled = true;
+        startBtn.value = 'Waiting for Players';
+    }
+}
 
 socket.on('updateOptions', function(options) {
     window.playWildDraw4Enabled = options.playWildDraw4;
 });
 
-socket.on('gameStarted', function(players) {
+socket.on('gameStarted', function(playerList) {
 
+    players = playerList.length;
     document.getElementById('waitingOverlay').style.display="none";
 
     var audio = new Audio('audio/game-start.wav');
@@ -57,14 +76,14 @@ socket.on('gameStarted', function(players) {
     document.getElementById('discard').style.display="inline-block";
 
     // Get this player's ID
-    for(var i = 0; i < players.length; i++) {
-        if(players[i].SocketID == socketId) {
-            playerId = players[i].PlayerID;
+    for(var i = 0; i < players; i++) {
+        if(playerList[i].SocketID == socketId) {
+            playerId = playerList[i].PlayerID;
         }
     }
 
     // Display players
-    createPlayersUI(players);
+    createPlayersUI(playerList);
 });
 
 function updateWaitingOverlay() {
@@ -78,11 +97,11 @@ function updateWaitingOverlay() {
 
 socket.on('newPlayer', function(data) {
     // Update the list and count of players
-    const {players: playersInLobby, host: hostName} = data;
+    const {players: lobbyPlayers, host: hostName} = data;
     const playerListDiv = document.getElementById('playerList');
     playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
     
-    playersInLobby.forEach(name => {
+    lobbyPlayers.forEach(name => {
         const span = document.createElement('span');
         span.style.marginRight = '10px';
 
@@ -106,17 +125,9 @@ socket.on('newPlayer', function(data) {
         playerListDiv.appendChild(span);
     });
 
-    players = playersInLobby.length;
-
-    const startBtn = document.getElementById('btnStart');
+    playersInLobby = lobbyPlayers;
     if (isPlayerA) {
-        if (players > 1) {
-            startBtn.disabled = false;
-            startBtn.innerText = 'Start New Match';
-        } else {
-            startBtn.disabled = true;
-            startBtn.innerText = 'Waiting for Players';
-        }
+        updateStartButtonState();
     } else {
         updateWaitingOverlay();
     }
@@ -409,7 +420,7 @@ function updatePlayableCards(topCard, currentColor) {
             if (cardColor === 'black') {
                 if (cardType === 'wild') playable = true;
                 if (cardType === 'draw4') {
-                    playable = playWildDraw4Enabled ? true : !hasOtherPlayable;
+                    playable = playWildDraw4Enabled || !hasOtherPlayable;
                 }
             }
         }
