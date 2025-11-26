@@ -4,10 +4,10 @@ const cdWidth = 120;
 const cdHeight = 180;
 const cards = new Image();
 const back = new Image();
-var socketId = -1;
-var playerId = -1;
-var players = 0;
-var playerName;
+let socketId = -1;
+let playerId = -1;
+let players = 0;
+let playerName;
 
 let isPlayerA = false;
 let playerAName = null;
@@ -66,9 +66,7 @@ socket.on('gameStarted', function(playerList) {
     players = playerList.length;
     document.getElementById('waitingOverlay').style.display="none";
 
-    var audio = new Audio('audio/game-start.wav');
-    audio.volume = 0.2;
-    audio.play();
+    playSound('audio/game-start.wav', 0.2);
 
     // Show/hide elements for in-game state
     document.getElementById("status").style.display="none";
@@ -77,7 +75,7 @@ socket.on('gameStarted', function(playerList) {
     document.getElementById('discard').style.display="inline-block";
 
     // Get this player's ID
-    for(var i = 0; i < players; i++) {
+    for(let i = 0; i < players; i++) {
         if(playerList[i].SocketID == socketId) {
             playerId = playerList[i].PlayerID;
         }
@@ -165,31 +163,22 @@ socket.on('requiredPlay', list => {
 
     requiredPlay = list;
 
-    const topCard = {
-        Color: document.getElementById('discard').getAttribute('dataCardColor'),
-        Type: document.getElementById('discard').getAttribute('dataCardType')
-    };
+    const topCard = getTopCard();
     
     updatePlayableCards(topCard, currentColor);
 });
 
 socket.on('turnChange', function(PlayerID) {
     // Mark all players as inactive
-    for(let i = 0; i < players; i++) {
-        document.getElementById('player_' + i).classList.remove('active');
-    }
+    document.querySelectorAll('.player').forEach(p => p.classList.remove('active'));
 
     // Mark the player whose turn it is as active
     document.getElementById('player_' + PlayerID).classList.add('active');
 
     if(PlayerID == playerId) {
-        var audio = new Audio('audio/turn-change.wav');
-        audio.play();
+        playSound('audio/turn-change.wav');
 
-        const topCard = {
-            Color: document.getElementById('discard').getAttribute('dataCardColor'),
-            Type: document.getElementById('discard').getAttribute('dataCardType')
-        };
+        const topCard = getTopCard();
         
         updatePlayableCards(topCard, currentColor);
     } else {
@@ -247,8 +236,7 @@ socket.on('updateScore', function(player, points) {
 });
 
 socket.on('gameOver', function(playerName) {
-    var audio = new Audio('audio/game-over.wav');
-    audio.play();
+    playSound('audio/game-over.wav');
 
     // Display a winner message
     document.getElementById('status').innerHTML = playerName + ' WON';
@@ -262,21 +250,18 @@ socket.on('gameOver', function(playerName) {
 
 socket.on('renderCard', function(card, player) {
     // Display a card
-    var hand = document.getElementById('hand_' + player.PlayerID);
-    var cardObj = getCardUI(card, player);
+    let hand = document.getElementById('hand_' + player.PlayerID);
+    let cardObj = getCardUI(card, player);
     cardObj.classList.add('unplayable');
 
     hand.appendChild(cardObj);
 
     repositionCards(player);
 
-    var myTurn = document.getElementById('player_' + playerId).classList.contains('active');
+    let myTurn = document.getElementById('player_' + playerId).classList.contains('active');
 
     if(player.SocketID == socketId && myTurn) {
-        const topCard = {
-            Color: document.getElementById('discard').getAttribute('dataCardColor'),
-            Type: document.getElementById('discard').getAttribute('dataCardType')
-        };
+        const topCard = getTopCard();
 
         const activeColor = currentColor || topCard.Color;
 
@@ -312,7 +297,7 @@ socket.on('logMessage', function(message) {
 
 function getCardUI(card, player) {
     // Get card image
-    var cardObj = document.createElement('div');
+    let cardObj = document.createElement('div');
 
     cardObj.className = 'card';
     cardObj.id = 'card_' + card.ID;
@@ -367,10 +352,10 @@ function repositionCards(player) {
 
         hand.innerHTML = '';
 
-        var i = 0;
+        let i = 0;
         cards.forEach(card => {
             // As more cards as drawn, overlap them more
-            var marginLeft = i === 0 ? '-20' : -5 * (cardCount - 1) + 5;
+            let marginLeft = i === 0 ? '-20' : -5 * (cardCount - 1) + 5;
             if(marginLeft < -59){marginLeft = -59;}
             card.style.marginLeft = marginLeft + 'px';
             i++;
@@ -445,7 +430,7 @@ socket.on('discardCard', function(card, player) {
     currentColor = card.Color;
 
     // Add a card to the discard pile
-    var cardObj = getCardUI(card);
+    let cardObj = getCardUI(card);
     cardObj.id = 'discard';
 
     // If it's a real player
@@ -455,13 +440,12 @@ socket.on('discardCard', function(card, player) {
         repositionCards(player);
     }
 
-    var discard = document.getElementById('discard');
+    let discard = document.getElementById('discard');
     discard.parentNode.replaceChild(cardObj, discard);
 });
 
 socket.on('cardDrawn', function() {
-    const audio = new Audio('audio/draw-card.wav');
-    audio.play();
+    playSound('audio/draw-card.wav');
 });
 
 function setCookie(name, value, seconds) {
@@ -512,20 +496,16 @@ function setColor(color) {
 
 function createPlayersUI(players) {
     // Display the players
-    document.getElementById('player0').innerHTML = '';
-    document.getElementById('player1').innerHTML = '';
-    document.getElementById('player2').innerHTML = '';
-    document.getElementById('player3').innerHTML = '';
-    document.getElementById('player4').innerHTML = '';
-    document.getElementById('player5').innerHTML = '';
-    document.getElementById('player6').innerHTML = '';
+    for (let i = 0; i < 7;  i++) {
+        document.getElementById('player' + i).innerHTML = '';
+    }
     document.getElementById('playerSelf').innerHTML = '';
 
-    for(var i = 0; i < players.length; i++) {
-        var div_player = document.createElement('div');
-        var div_player_name = document.createElement('div');
-        var div_hand = document.createElement('div');
-        var div_points = document.createElement('div');
+    for(let i = 0; i < players.length; i++) {
+        let div_player = document.createElement('div');
+        let div_player_name = document.createElement('div');
+        let div_hand = document.createElement('div');
+        let div_points = document.createElement('div');
 
         if(isPlayerA) {
             div_player_name.style.cursor = 'pointer';
@@ -664,6 +644,20 @@ function showBootModal(playerName) {
 
     cancelBtn.onclick = () => {
         modal.style.display = 'none';
+    };
+}
+
+function playSound(src, volume=1.0) {
+    const audio = new Audio(src);
+    audio.volume = volume;
+    audio.play();
+}
+
+function getTopCard() {
+    const discard = document.getElementById('discard');
+    return {
+        Color: discard.getAttribute('dataCardColor'),
+        Type: discard.getAttribute('dataCardType')
     };
 }
 

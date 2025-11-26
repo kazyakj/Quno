@@ -11,12 +11,12 @@ server.listen(port, () => console.log('listening on port ' + port));
 
 const maxPlayers = 8;
 const CARD_DRAW_DELAY_MS = 300;
-var playDirection = -1;
-var currentPlayer;
-var currentColor;
-var currentType;
-var cardsToDraw = 0;
-var discardPile = new Array();
+let playDirection = -1;
+let currentPlayer;
+let currentColor;
+let currentType;
+let cardsToDraw = 0;
+let discardPile = new Array();
 let players = new Map();
 let playersInLobby = new Array();
 let hostName = null;
@@ -128,7 +128,7 @@ function onConnection(socket) {
 
     socket.on('resetGame', function() {
         // Start a new match if there's more than 1 player
-        var playerCount = io.engine.clientsCount;
+        let playerCount = io.engine.clientsCount;
 
         if(playerCount > 1) {
             io.emit('logMessage', 'A new match was started');
@@ -158,13 +158,14 @@ function onConnection(socket) {
             let colorMatch = (playColor == currentColor && playColor != 'black');
             let typeMatch = (playType == currentType && playColor != 'black');
             let wild = (playType == 'wild');
+            let draw4wild = false;
 
             if(playWildDraw4) {
                 // If 'play draw 4 any time' is enabled, let them play it
-                var draw4wild = (playType == 'draw4');
+                draw4wild = (playType == 'draw4');
             } else {
                 // If 'play draw 4 any time' is disabled, make sure it's their only playable card first
-                var draw4wild = (playType == 'draw4' && !canPlay(currentPlayer, ['draw4']));
+                draw4wild = (playType == 'draw4' && !canPlay(currentPlayer, ['draw4']));
             }
 
             // Let them play if they have the right color or card value, or if it's a wild
@@ -470,11 +471,11 @@ function cardValue(card) {
 function createPlayers() {
     // Create new players
     players.clear();
-    var i = 0;
+    let i = 0;
 
     io.sockets.sockets.forEach((socket) => {
-        var hand = new Array();
-        var player = {
+        let hand = new Array();
+        let player = {
             Name: socket.playerName, 
             PlayerID: i, 
             Points: 0, 
@@ -496,12 +497,12 @@ function createDeck() {
     // Create a new deck
     deck = new Array();
 
-    for(var i = 0; i < 112; i++) {
-        var color = cardColor(i);
-        var type = cardType(i);
-        var value = cardValue(i);
+    for(let i = 0; i < 112; i++) {
+        let color = cardColor(i);
+        let type = cardType(i);
+        let value = cardValue(i);
 
-        var card = {'ID': i, 'Color': color, 'Type': type, 'Value': value};
+        let card = {'ID': i, 'Color': color, 'Type': type, 'Value': value};
         deck.push(card);
     }
 
@@ -521,9 +522,9 @@ function shuffle(deck) {
 
 function dealHands() {
     // Deal new cards to every player
-    for(var i = 0; i < 7; i++) {
+    for(let i = 0; i < 7; i++) {
         players.forEach((player) => {
-            var card = deck.pop();
+            let card = deck.pop();
             player.Hand.push(card);
             io.emit('renderCard', card, player);
         });
@@ -615,7 +616,7 @@ function checkForWin(SocketID) {
 
 function getPoints(players) {
     // Tally up points
-    var points = 0;
+    let points = 0;
 
     // Count value of cards in each player's hand
     players.forEach((player) => {
@@ -625,7 +626,7 @@ function getPoints(players) {
     });
 
     // Update the scores
-    var player = players.get(currentPlayer);
+    let player = players.get(currentPlayer);
     player.Points += points;
     io.emit('updateScore', player.PlayerID, player.Points);
 }
@@ -653,7 +654,7 @@ function nextTurn(skipAutoDraw = false) {
     if (gameIsOver) return;
     // Switch to the next player's turn
     let player = players.get(currentPlayer);
-    var currentPlayerID = player.PlayerID;
+    let currentPlayerID = player.PlayerID;
 
     currentPlayerID += playDirection;
 
@@ -695,24 +696,15 @@ function nextTurn(skipAutoDraw = false) {
 function canPlay(currentPlayer, invalidCards) {
     // Check if the player is able to play a card, excluding some invalidCards
     let player = players.get(currentPlayer);
-    let hasCard = false;
-    
-    player.Hand.forEach((card) => {
-        // Check every card in the hand
-        let playColor = card.Color;
-        let playType = card.Type;
 
-        if(!invalidCards.includes(playType)) {
-            // Make sure card isn't in the invalid list
-            // If the card is wild or matches the current color or type, it's playable
-            if(playColor == currentColor || playColor == 'black' || playType == currentType) {
-                hasCard = true;
-                return hasCard;
-            }
-        }
-    })
-
-    return hasCard;
+    return player.Hand.some(card => {
+        if (invalidCards.includes(card.Type)) return false;
+        return (
+            card.Color === currentColor ||
+            card.Color === 'black' ||
+            card.Type === currentType
+        );
+    });
 }
 
 function startGame() {
@@ -731,7 +723,7 @@ function startGame() {
     io.emit('hideDraw');
 
     // Randomly select a new player to play first
-    var currentPlayerID = Math.floor(Math.random() * players.size);
+    let currentPlayerID = Math.floor(Math.random() * players.size);
 
     // Reset each player's hand
     players.forEach((player) => {
