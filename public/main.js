@@ -4,16 +4,17 @@ const cdWidth = 120;
 const cdHeight = 180;
 const cards = new Image();
 const back = new Image();
-var socketId = -1;
-var playerId = -1;
-var players = 0;
-var playerName;
+let socketId = -1;
+let playerId = -1;
+let players = 0;
+let playerName;
 
 let isPlayerA = false;
 let playerAName = null;
 let currentColor = null;
 let bootTargetId = null;
 let requiredPlay = [];
+let playersInLobby = [];
 
 const sidePanel = document.getElementById('side-panel');
 const collapseButton = document.getElementById('collapse-btn');
@@ -22,33 +23,53 @@ collapseButton.addEventListener('click', () => {
     sidePanel.classList.toggle('collapsed');
 });
 
+// Connect player to the server
 socket.on('connect', function() {
-    // Try to join the game
     socketId = socket.id;
     socket.emit('requestJoin', playerName);
 });
 
+// Set the game host
 socket.on('setHost', function(name) {
     playerAName = name;
 });
 
+// Show game controls to the host
 socket.on('isPlayerA', function() {
-    // Show game controls to the first player to join
     isPlayerA = true;
     document.getElementById('btnStart').style.display="inline-block";
     document.getElementById('btnOptions').style.display="inline-block";
+
+    updateStartButtonState();
 });
 
+// Update the state of the start button based on number of players
+function updateStartButtonState() {
+    const startBtn = document.getElementById('btnStart');
+    const lobbyCount = playersInLobby.length;
+
+    if (!isPlayerA) return;
+
+    if (lobbyCount > 1) {
+        startBtn.disabled = false;
+        startBtn.value = 'Start New Match';
+    } else {
+        startBtn.disabled = true;
+        startBtn.value = 'Waiting for Players';
+    }
+}
+
+// Update game options
 socket.on('updateOptions', function(options) {
     window.playWildDraw4Enabled = options.playWildDraw4;
 });
 
-socket.on('gameStarted', function(players) {
-
+// Start the game
+socket.on('gameStarted', function(playerList) {
+    players = playerList.length;
     document.getElementById('waitingOverlay').style.display="none";
 
-    var audio = new Audio('audio/game-start.wav');
-    audio.play();
+    playSound('audio/game-start.wav', 0.2);
 
     // Show/hide elements for in-game state
     document.getElementById("status").style.display="none";
@@ -57,16 +78,17 @@ socket.on('gameStarted', function(players) {
     document.getElementById('discard').style.display="inline-block";
 
     // Get this player's ID
-    for(var i = 0; i < players.length; i++) {
-        if(players[i].SocketID == socketId) {
-            playerId = players[i].PlayerID;
+    for(let i = 0; i < players; i++) {
+        if(playerList[i].SocketID == socketId) {
+            playerId = playerList[i].PlayerID;
         }
     }
 
     // Display players
-    createPlayersUI(players);
+    createPlayersUI(playerList);
 });
 
+// Show or hide waiting overlay for non-host players
 function updateWaitingOverlay() {
     const overlay = document.getElementById('waitingOverlay');
     if (!isPlayerA) {
@@ -76,13 +98,13 @@ function updateWaitingOverlay() {
     }
 }
 
+// Update the player list when a new player joins
 socket.on('newPlayer', function(data) {
-    // Update the list and count of players
-    const {players: playersInLobby, host: hostName} = data;
+    const {players: lobbyPlayers, host: hostName} = data;
     const playerListDiv = document.getElementById('playerList');
     playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
     
-    playersInLobby.forEach(name => {
+    lobbyPlayers.forEach(name => {
         const span = document.createElement('span');
         span.style.marginRight = '10px';
 
@@ -106,24 +128,16 @@ socket.on('newPlayer', function(data) {
         playerListDiv.appendChild(span);
     });
 
-    players = playersInLobby.length;
-
-    const startBtn = document.getElementById('btnStart');
+    playersInLobby = lobbyPlayers;
     if (isPlayerA) {
-        if (players > 1) {
-            startBtn.disabled = false;
-            startBtn.innerText = 'Start New Match';
-        } else {
-            startBtn.disabled = true;
-            startBtn.innerText = 'Waiting for Players';
-        }
+        updateStartButtonState();
     } else {
         updateWaitingOverlay();
     }
 });
 
+// Display the buttons to let the player pick a color after a wild is played
 socket.on('chooseColor', function() {
-    // Display the buttons to let the player pick a color after wild
     document.getElementById('color-buttons').style.display="flex";
 
     const hand = document.getElementById('hand_' + playerId);
@@ -132,52 +146,41 @@ socket.on('chooseColor', function() {
     }
 });
 
+// Display which color was selected after a wild is played
 socket.on('colorChosen', function(color) {
     currentColor = color;
-    // Display which color was selected after a wild
     document.getElementById('color-bar').style.background=color;
 });
 
+// Hide the color bar after move past a wild
 socket.on('hideColor', function() {
-    // Hide the color bar now that we've moved past the wild
     document.getElementById('color-bar').style.background="rgb(184, 184, 184)";
 });
 
-socket.on('hideDraw', function() {
-    document.getElementById('btnDraw').style.display="none";
-});
-
+// Update the list of allowable plays for the player
 socket.on('requiredPlay', list => {
     const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
     if (!myTurn) return;
 
     requiredPlay = list;
 
-    const topCard = {
-        Color: document.getElementById('discard').getAttribute('dataCardColor'),
-        Type: document.getElementById('discard').getAttribute('dataCardType')
-    };
+    const topCard = getTopCard();
     
     updatePlayableCards(topCard, currentColor);
 });
 
+// Handle turn change
 socket.on('turnChange', function(PlayerID) {
     // Mark all players as inactive
-    for(let i = 0; i < players; i++) {
-        document.getElementById('player_' + i).classList.remove('active');
-    }
+    document.querySelectorAll('.player').forEach(p => p.classList.remove('active'));
 
     // Mark the player whose turn it is as active
     document.getElementById('player_' + PlayerID).classList.add('active');
 
     if(PlayerID == playerId) {
-        var audio = new Audio('audio/turn-change.wav');
-        audio.play();
+        playSound('audio/turn-change.wav');
 
-        const topCard = {
-            Color: document.getElementById('discard').getAttribute('dataCardColor'),
-            Type: document.getElementById('discard').getAttribute('dataCardType')
-        };
+        const topCard = getTopCard();
         
         updatePlayableCards(topCard, currentColor);
     } else {
@@ -188,13 +191,8 @@ socket.on('turnChange', function(PlayerID) {
     }
 });
 
-socket.on('canDrawCard', function() {
-    // If the player needs to draw a card, display the draw button
-    drawCard();
-});
-
+// Handle Uno call on themself
 socket.on('calledUnoMe', function() {
-    // If the player has already called Uno, gray the Uno button out
     const btn = document.getElementById('btnUnoMe');
     if (btn) {
         btn.disabled = true;
@@ -202,8 +200,8 @@ socket.on('calledUnoMe', function() {
     }
 });
 
+// Undo uno call on themself
 socket.on('notCalledUnoMe', function() {
-    // If the player hasn't already called Uno, make the button not grayed out
     const btn = document.getElementById('btnUnoMe');
     if (btn) {
         btn.disabled = false;
@@ -211,8 +209,8 @@ socket.on('notCalledUnoMe', function() {
     }
 });
 
+// Handle Uno call on another player
 socket.on('calledUnoYou', function() {
-    // If the player has already called Uno, gray the Uno button out
     const btn = document.getElementById('btnUnoYou');
     if (btn) {
         btn.disabled = true;
@@ -220,8 +218,8 @@ socket.on('calledUnoYou', function() {
     }
 });
 
+// Undo Uno call on another player
 socket.on('notCalledUnoYou', function() {
-    // If the player hasn't already called Uno, make the button not grayed out
     const btn = document.getElementById('btnUnoYou');
     if (btn) {
         btn.disabled = false;
@@ -229,14 +227,14 @@ socket.on('notCalledUnoYou', function() {
     }
 });
 
+// Update the points of the player who won the game
 socket.on('updateScore', function(player, points) {
-    // Update the points of the player who won the game
     document.getElementById('points_' + player).innerHTML = points;
 });
 
+// Handle game over
 socket.on('gameOver', function(playerName) {
-    var audio = new Audio('audio/game-over.wav');
-    audio.play();
+    playSound('audio/game-over.wav');
 
     // Display a winner message
     document.getElementById('status').innerHTML = playerName + ' WON';
@@ -248,23 +246,20 @@ socket.on('gameOver', function(playerName) {
     }
 });
 
+// Render a card in a player's hand
 socket.on('renderCard', function(card, player) {
-    // Display a card
-    var hand = document.getElementById('hand_' + player.PlayerID);
-    var cardObj = getCardUI(card, player);
+    let hand = document.getElementById('hand_' + player.PlayerID);
+    let cardObj = getCardUI(card, player);
     cardObj.classList.add('unplayable');
 
     hand.appendChild(cardObj);
 
     repositionCards(player);
 
-    var myTurn = document.getElementById('player_' + playerId).classList.contains('active');
+    let myTurn = document.getElementById('player_' + playerId).classList.contains('active');
 
     if(player.SocketID == socketId && myTurn) {
-        const topCard = {
-            Color: document.getElementById('discard').getAttribute('dataCardColor'),
-            Type: document.getElementById('discard').getAttribute('dataCardType')
-        };
+        const topCard = getTopCard();
 
         const activeColor = currentColor || topCard.Color;
 
@@ -272,6 +267,7 @@ socket.on('renderCard', function(card, player) {
     }
 });
 
+// Display log messages
 socket.on('logMessage', function(message) {
     const messageContainer = document.getElementById('message-container');
     const messageElement = document.createElement('div');
@@ -298,9 +294,9 @@ socket.on('logMessage', function(message) {
     messageContainer.insertBefore(messageElement, messageContainer.firstChild);
 });
 
+// Create the UI element for a card
 function getCardUI(card, player) {
-    // Get card image
-    var cardObj = document.createElement('div');
+    let cardObj = document.createElement('div');
 
     cardObj.className = 'card';
     cardObj.id = 'card_' + card.ID;
@@ -338,8 +334,8 @@ function getCardUI(card, player) {
     return cardObj;
 }
 
+// Adjust card positioning as new cards get added to a hand
 function repositionCards(player) {
-    // Adjust card positioning as new cards get added to a hand
     const hand = document.getElementById('hand_' + player.PlayerID);
     if (!hand) return;
 
@@ -347,6 +343,7 @@ function repositionCards(player) {
     const cardCount = cards.length;
 
     if(player.SocketID == socketId) {
+        // Sort based on color and type
         cards.sort((a, b) => {
             const colorDiff = a.getAttribute('dataCardColor').localeCompare(b.getAttribute('dataCardColor'));
             if (colorDiff !== 0) return colorDiff;
@@ -355,10 +352,10 @@ function repositionCards(player) {
 
         hand.innerHTML = '';
 
-        var i = 0;
+        let i = 0;
         cards.forEach(card => {
             // As more cards as drawn, overlap them more
-            var marginLeft = i === 0 ? '-20' : -5 * (cardCount - 1) + 5;
+            let marginLeft = i === 0 ? '-20' : -5 * (cardCount - 1) + 5;
             if(marginLeft < -59){marginLeft = -59;}
             card.style.marginLeft = marginLeft + 'px';
             i++;
@@ -372,6 +369,7 @@ function repositionCards(player) {
     }
 }
 
+// Update which cards are playable in the player's hand
 function updatePlayableCards(topCard, currentColor) {
     const hand = document.getElementById('hand_' + playerId);
     if (!hand) return;
@@ -394,6 +392,7 @@ function updatePlayableCards(topCard, currentColor) {
         }
     });
 
+    // Second pass: mark cards as playable or unplayable
     cards.forEach(card => {
         const cardColor = card.getAttribute('dataCardColor');
         const cardType = card.getAttribute('dataCardType');
@@ -409,7 +408,7 @@ function updatePlayableCards(topCard, currentColor) {
             if (cardColor === 'black') {
                 if (cardType === 'wild') playable = true;
                 if (cardType === 'draw4') {
-                    playable = playWildDraw4Enabled ? true : !hasOtherPlayable;
+                    playable = playWildDraw4Enabled || !hasOtherPlayable;
                 }
             }
         }
@@ -422,46 +421,46 @@ function updatePlayableCards(topCard, currentColor) {
     });
 }
 
+// Attempt to play a card
 function playCard(card, player) {
-    // Attempt to play a card
     socket.emit('playCard', card);
 
     repositionCards(player);
 }
 
+// Update the discard pile when a card is played
 socket.on('discardCard', function(card, player) {
     currentColor = card.Color;
 
     // Add a card to the discard pile
-    var cardObj = getCardUI(card);
+    let cardObj = getCardUI(card);
     cardObj.id = 'discard';
 
-    // If it's a real player
-    // Basically just ignores the initial discard after a new deal
+    // Ignore the initial discard after a new deal and only handle player discards
     if(player != null) {
         document.getElementById('card_' + card.ID).remove();
         repositionCards(player);
     }
 
-    var discard = document.getElementById('discard');
+    let discard = document.getElementById('discard');
     discard.parentNode.replaceChild(cardObj, discard);
 });
 
+// Play sound when a card is drawn
 socket.on('cardDrawn', function() {
-    const audio = new Audio('audio/draw-card.wav');
-    audio.play();
+    playSound('audio/draw-card.wav');
 });
 
+// Save a cookie with the player name
 function setCookie(name, value, seconds) {
-    // Save a cookie with the player name
     let date = new Date();
     date.setTime(date.getTime() + (seconds * 1000));
     let expires = "expires=" + date.toUTCString();
     document.cookie = name + "=" + value + ";" + expires + ";path=/";
 }
 
+// Get the player name from a cookie if it exists
 function getCookie(name) {
-    // Get the player name from a cookie if it exists
     name += "=";
     let cookies = document.cookie.split(';');
     for(let i = 0; i < cookies.length; i++) {
@@ -476,44 +475,34 @@ function getCookie(name) {
     return null;
 }
 
+// Start a new match
 function resetGame() {
-    // Start a new match
     socket.emit('resetGame');
 }
 
+// Deal a new hand within the same match
 function newHand() {
-    // Deal a new hand within the same match
     socket.emit('newHand');
 }
 
-function drawCard() {
-    // Draw a card
-    document.getElementById('btnDraw').style.display="none";
-    socket.emit('drawCard');
-}
-
+// Set a new color after a color button has been clicked after a wild
 function setColor(color) {
-    // Set a new color after a color button has been clicked after a wild
     document.getElementById('color-buttons').style.display="none";
     socket.emit('colorChosen', color);
 }
 
+// Display all players around the table
 function createPlayersUI(players) {
-    // Display the players
-    document.getElementById('player0').innerHTML = '';
-    document.getElementById('player1').innerHTML = '';
-    document.getElementById('player2').innerHTML = '';
-    document.getElementById('player3').innerHTML = '';
-    document.getElementById('player4').innerHTML = '';
-    document.getElementById('player5').innerHTML = '';
-    document.getElementById('player6').innerHTML = '';
+    for (let i = 0; i < 7;  i++) {
+        document.getElementById('player' + i).innerHTML = '';
+    }
     document.getElementById('playerSelf').innerHTML = '';
 
-    for(var i = 0; i < players.length; i++) {
-        var div_player = document.createElement('div');
-        var div_player_name = document.createElement('div');
-        var div_hand = document.createElement('div');
-        var div_points = document.createElement('div');
+    for(let i = 0; i < players.length; i++) {
+        let div_player = document.createElement('div');
+        let div_player_name = document.createElement('div');
+        let div_hand = document.createElement('div');
+        let div_points = document.createElement('div');
 
         if(isPlayerA) {
             div_player_name.style.cursor = 'pointer';
@@ -574,6 +563,7 @@ function createPlayersUI(players) {
     }
 }
 
+// Call Uno for oneself
 function unoMe() {
     const btn = document.getElementById('btnUnoMe');
     if (btn) {
@@ -581,10 +571,10 @@ function unoMe() {
         btn.style.background = 'gray';
     }
 
-    // Send a message that the player called uno
     socket.emit('unoMe');
 }
 
+// Call Uno on another player
 function unoYou() {
     const btn = document.getElementById('btnUnoYou');
     if (btn) {
@@ -592,17 +582,16 @@ function unoYou() {
         btn.style.background = 'gray';
     }
     
-    // Send a message that the player called uno on someone else
     socket.emit('unoYou');
 }
 
+// Show the game options
 function showOptions() {
-    // Display the game options
     document.getElementById('options').style.display = 'flex';
 }
 
+// Save the game options
 function saveOptions() {
-    // Save the chosen game options and send to the server
     document.getElementById('options').style.display = 'none';
     let checkboxes = document.querySelectorAll('#options input[type="checkbox"]:checked');
     let selectedValues = Array.from(checkboxes).map(checkbox => checkbox.value);
@@ -610,8 +599,8 @@ function saveOptions() {
     socket.emit('saveOptions', {options: selectedValues});
 }
 
+// Initialize the game
 function init() {
-    // Load initial state
     cards.src = 'images/deck_full.png';
     back.src = 'images/quno.png';
   
@@ -636,6 +625,7 @@ function init() {
     socket.connect();
 }
 
+// Show the boot confirmation modal
 function showBootModal(playerName) {
     const modal = document.getElementById('bootModal');
     const msg = document.getElementById('bootMessage');
@@ -655,11 +645,28 @@ function showBootModal(playerName) {
     };
 }
 
+// Play a sound effect
+function playSound(src, volume=1.0) {
+    const audio = new Audio(src);
+    audio.volume = volume;
+    audio.play();
+}
+
+// Get the top card on the discard pile
+function getTopCard() {
+    const discard = document.getElementById('discard');
+    return {
+        Color: discard.getAttribute('dataCardColor'),
+        Type: discard.getAttribute('dataCardType')
+    };
+}
+
+// Handle being booted from the game
 socket.on('booted', () => {
     socket.io.opts.reconnection = false; // stop Socket.IO from auto-reconnecting
     socket.disconnect(); // force disconnection from server
 
-    // Optional: replace page content so they can’t keep playing
+    // Replace page content so they can’t keep playing
     document.body.innerHTML = `
         <div style="text-align:center; margin-top:100px;">
             <h1>You have been booted from the game.</h1>

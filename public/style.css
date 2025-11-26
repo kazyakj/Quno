@@ -21,7 +21,6 @@ main {
     width: 90%;
     margin: 0 auto;
     min-height: 350px;
-    font-family: sans-serif;
     padding: 20px;
     flex: 1;
 }
@@ -29,18 +28,22 @@ main {
 .btn, .game-btn {
     border: none;
     padding: 10px 30px;
-    border-radius: 10px;
     cursor: pointer;
     font-size: 15pt;
     font-weight: bold;
     background: #222;
     color: white !important;
-    border-radius: 0px;
+    border-radius: 0;
     margin: 5px;
 }
 
 .btn:hover, .game-btn:hover {
     background: dodgerblue;
+}
+
+.btn:disabled, .game-btn:disabled {
+    background: gray;
+    cursor: not-allowed;
 }
 
 header h1 {
@@ -76,6 +79,17 @@ main .card {
     transition: transform 0.2s;
 }
 
+main .card.unplayable {
+    filter: brightness(0.7) saturate(0.8);
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+main .card.unplayable:hover {
+    filter: brightness(0.9) saturate(1);
+    transform: none !important;
+}
+
 main .card:first-child {
     margin-left: 0;
 }
@@ -97,8 +111,7 @@ main #status {
 
 .players {
     width: 80%;
-    margin: 0;
-    margin-top: 20px;
+    margin: 20px 0 0;
     display: grid;
     gap: 10px;
     padding: 10px;
@@ -221,7 +234,7 @@ main #status {
     height: 20px;
     background: rgb(184, 184, 184);
     padding-bottom: 10px;
-    transform: translate(0%, -50%);
+    transform: translate(0, -50%);
 }
 
 main .player .hand {
@@ -297,8 +310,8 @@ main .player .hand {
 }
 
 #right-options img {
-    max-width: 80%; /* Make sure the image doesn't exceed the width of its container */
-    height: 200px; /* Maintain aspect ratio */
+    max-width: 80%;
+    height: 200px;
     width: 900px;
 }
 
@@ -312,7 +325,6 @@ hr {
     width: 250px;
     background-color: #f0f0f0;
     box-shadow: -2px 0 5px rgba(0, 0, 0, 0.2);
-    overflow-y: auto;
     overflow-x: hidden;
     font-size: 14px;
     transition: width 0.3s;
@@ -360,17 +372,6 @@ hr {
     overflow-y: auto;
     flex: 1;
     background-color: #fafafa;
-}
-
-main .card.unplayable {
-    filter: brightness(0.7) saturate(0.8);
-    cursor: not-allowed;
-    pointer-events: none;
-}
-
-main .card.unplayable:hover {
-    filter: brightness(0.9) saturate(1);
-    transform: none !important;
 }
 
 .modal {
