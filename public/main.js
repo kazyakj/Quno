@@ -23,18 +23,19 @@ collapseButton.addEventListener('click', () => {
     sidePanel.classList.toggle('collapsed');
 });
 
+// Connect player to the server
 socket.on('connect', function() {
-    // Try to join the game
     socketId = socket.id;
     socket.emit('requestJoin', playerName);
 });
 
+// Set the game host
 socket.on('setHost', function(name) {
     playerAName = name;
 });
 
+// Show game controls to the host
 socket.on('isPlayerA', function() {
-    // Show game controls to the first player to join
     isPlayerA = true;
     document.getElementById('btnStart').style.display="inline-block";
     document.getElementById('btnOptions').style.display="inline-block";
@@ -42,6 +43,7 @@ socket.on('isPlayerA', function() {
     updateStartButtonState();
 });
 
+// Update the state of the start button based on number of players
 function updateStartButtonState() {
     const startBtn = document.getElementById('btnStart');
     const lobbyCount = playersInLobby.length;
@@ -57,12 +59,13 @@ function updateStartButtonState() {
     }
 }
 
+// Update game options
 socket.on('updateOptions', function(options) {
     window.playWildDraw4Enabled = options.playWildDraw4;
 });
 
+// Start the game
 socket.on('gameStarted', function(playerList) {
-
     players = playerList.length;
     document.getElementById('waitingOverlay').style.display="none";
 
@@ -85,6 +88,7 @@ socket.on('gameStarted', function(playerList) {
     createPlayersUI(playerList);
 });
 
+// Show or hide waiting overlay for non-host players
 function updateWaitingOverlay() {
     const overlay = document.getElementById('waitingOverlay');
     if (!isPlayerA) {
@@ -94,8 +98,8 @@ function updateWaitingOverlay() {
     }
 }
 
+// Update the player list when a new player joins
 socket.on('newPlayer', function(data) {
-    // Update the list and count of players
     const {players: lobbyPlayers, host: hostName} = data;
     const playerListDiv = document.getElementById('playerList');
     playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
@@ -132,8 +136,8 @@ socket.on('newPlayer', function(data) {
     }
 });
 
+// Display the buttons to let the player pick a color after a wild is played
 socket.on('chooseColor', function() {
-    // Display the buttons to let the player pick a color after wild
     document.getElementById('color-buttons').style.display="flex";
 
     const hand = document.getElementById('hand_' + playerId);
@@ -142,21 +146,18 @@ socket.on('chooseColor', function() {
     }
 });
 
+// Display which color was selected after a wild is played
 socket.on('colorChosen', function(color) {
     currentColor = color;
-    // Display which color was selected after a wild
     document.getElementById('color-bar').style.background=color;
 });
 
+// Hide the color bar after move past a wild
 socket.on('hideColor', function() {
-    // Hide the color bar now that we've moved past the wild
     document.getElementById('color-bar').style.background="rgb(184, 184, 184)";
 });
 
-socket.on('hideDraw', function() {
-    document.getElementById('btnDraw').style.display="none";
-});
-
+// Update the list of allowable plays for the player
 socket.on('requiredPlay', list => {
     const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
     if (!myTurn) return;
@@ -168,6 +169,7 @@ socket.on('requiredPlay', list => {
     updatePlayableCards(topCard, currentColor);
 });
 
+// Handle turn change
 socket.on('turnChange', function(PlayerID) {
     // Mark all players as inactive
     document.querySelectorAll('.player').forEach(p => p.classList.remove('active'));
@@ -189,13 +191,8 @@ socket.on('turnChange', function(PlayerID) {
     }
 });
 
-socket.on('canDrawCard', function() {
-    // If the player needs to draw a card, display the draw button
-    drawCard();
-});
-
+// Handle Uno call on themself
 socket.on('calledUnoMe', function() {
-    // If the player has already called Uno, gray the Uno button out
     const btn = document.getElementById('btnUnoMe');
     if (btn) {
         btn.disabled = true;
@@ -203,8 +200,8 @@ socket.on('calledUnoMe', function() {
     }
 });
 
+// Undo uno call on themself
 socket.on('notCalledUnoMe', function() {
-    // If the player hasn't already called Uno, make the button not grayed out
     const btn = document.getElementById('btnUnoMe');
     if (btn) {
         btn.disabled = false;
@@ -212,8 +209,8 @@ socket.on('notCalledUnoMe', function() {
     }
 });
 
+// Handle Uno call on another player
 socket.on('calledUnoYou', function() {
-    // If the player has already called Uno, gray the Uno button out
     const btn = document.getElementById('btnUnoYou');
     if (btn) {
         btn.disabled = true;
@@ -221,8 +218,8 @@ socket.on('calledUnoYou', function() {
     }
 });
 
+// Undo Uno call on another player
 socket.on('notCalledUnoYou', function() {
-    // If the player hasn't already called Uno, make the button not grayed out
     const btn = document.getElementById('btnUnoYou');
     if (btn) {
         btn.disabled = false;
@@ -230,11 +227,12 @@ socket.on('notCalledUnoYou', function() {
     }
 });
 
+// Update the points of the player who won the game
 socket.on('updateScore', function(player, points) {
-    // Update the points of the player who won the game
     document.getElementById('points_' + player).innerHTML = points;
 });
 
+// Handle game over
 socket.on('gameOver', function(playerName) {
     playSound('audio/game-over.wav');
 
@@ -248,8 +246,8 @@ socket.on('gameOver', function(playerName) {
     }
 });
 
+// Render a card in a player's hand
 socket.on('renderCard', function(card, player) {
-    // Display a card
     let hand = document.getElementById('hand_' + player.PlayerID);
     let cardObj = getCardUI(card, player);
     cardObj.classList.add('unplayable');
@@ -269,6 +267,7 @@ socket.on('renderCard', function(card, player) {
     }
 });
 
+// Display log messages
 socket.on('logMessage', function(message) {
     const messageContainer = document.getElementById('message-container');
     const messageElement = document.createElement('div');
@@ -295,8 +294,8 @@ socket.on('logMessage', function(message) {
     messageContainer.insertBefore(messageElement, messageContainer.firstChild);
 });
 
+// Create the UI element for a card
 function getCardUI(card, player) {
-    // Get card image
     let cardObj = document.createElement('div');
 
     cardObj.className = 'card';
@@ -335,8 +334,8 @@ function getCardUI(card, player) {
     return cardObj;
 }
 
+// Adjust card positioning as new cards get added to a hand
 function repositionCards(player) {
-    // Adjust card positioning as new cards get added to a hand
     const hand = document.getElementById('hand_' + player.PlayerID);
     if (!hand) return;
 
@@ -344,6 +343,7 @@ function repositionCards(player) {
     const cardCount = cards.length;
 
     if(player.SocketID == socketId) {
+        // Sort based on color and type
         cards.sort((a, b) => {
             const colorDiff = a.getAttribute('dataCardColor').localeCompare(b.getAttribute('dataCardColor'));
             if (colorDiff !== 0) return colorDiff;
@@ -369,6 +369,7 @@ function repositionCards(player) {
     }
 }
 
+// Update which cards are playable in the player's hand
 function updatePlayableCards(topCard, currentColor) {
     const hand = document.getElementById('hand_' + playerId);
     if (!hand) return;
@@ -391,6 +392,7 @@ function updatePlayableCards(topCard, currentColor) {
         }
     });
 
+    // Second pass: mark cards as playable or unplayable
     cards.forEach(card => {
         const cardColor = card.getAttribute('dataCardColor');
         const cardType = card.getAttribute('dataCardType');
@@ -419,13 +421,14 @@ function updatePlayableCards(topCard, currentColor) {
     });
 }
 
+// Attempt to play a card
 function playCard(card, player) {
-    // Attempt to play a card
     socket.emit('playCard', card);
 
     repositionCards(player);
 }
 
+// Update the discard pile when a card is played
 socket.on('discardCard', function(card, player) {
     currentColor = card.Color;
 
@@ -433,8 +436,7 @@ socket.on('discardCard', function(card, player) {
     let cardObj = getCardUI(card);
     cardObj.id = 'discard';
 
-    // If it's a real player
-    // Basically just ignores the initial discard after a new deal
+    // Ignore the initial discard after a new deal and only handle player discards
     if(player != null) {
         document.getElementById('card_' + card.ID).remove();
         repositionCards(player);
@@ -444,20 +446,21 @@ socket.on('discardCard', function(card, player) {
     discard.parentNode.replaceChild(cardObj, discard);
 });
 
+// Play sound when a card is drawn
 socket.on('cardDrawn', function() {
     playSound('audio/draw-card.wav');
 });
 
+// Save a cookie with the player name
 function setCookie(name, value, seconds) {
-    // Save a cookie with the player name
     let date = new Date();
     date.setTime(date.getTime() + (seconds * 1000));
     let expires = "expires=" + date.toUTCString();
     document.cookie = name + "=" + value + ";" + expires + ";path=/";
 }
 
+// Get the player name from a cookie if it exists
 function getCookie(name) {
-    // Get the player name from a cookie if it exists
     name += "=";
     let cookies = document.cookie.split(';');
     for(let i = 0; i < cookies.length; i++) {
@@ -472,30 +475,24 @@ function getCookie(name) {
     return null;
 }
 
+// Start a new match
 function resetGame() {
-    // Start a new match
     socket.emit('resetGame');
 }
 
+// Deal a new hand within the same match
 function newHand() {
-    // Deal a new hand within the same match
     socket.emit('newHand');
 }
 
-function drawCard() {
-    // Draw a card
-    document.getElementById('btnDraw').style.display="none";
-    socket.emit('drawCard');
-}
-
+// Set a new color after a color button has been clicked after a wild
 function setColor(color) {
-    // Set a new color after a color button has been clicked after a wild
     document.getElementById('color-buttons').style.display="none";
     socket.emit('colorChosen', color);
 }
 
+// Display all players around the table
 function createPlayersUI(players) {
-    // Display the players
     for (let i = 0; i < 7;  i++) {
         document.getElementById('player' + i).innerHTML = '';
     }
@@ -566,6 +563,7 @@ function createPlayersUI(players) {
     }
 }
 
+// Call Uno for oneself
 function unoMe() {
     const btn = document.getElementById('btnUnoMe');
     if (btn) {
@@ -573,10 +571,10 @@ function unoMe() {
         btn.style.background = 'gray';
     }
 
-    // Send a message that the player called uno
     socket.emit('unoMe');
 }
 
+// Call Uno on another player
 function unoYou() {
     const btn = document.getElementById('btnUnoYou');
     if (btn) {
@@ -584,17 +582,16 @@ function unoYou() {
         btn.style.background = 'gray';
     }
     
-    // Send a message that the player called uno on someone else
     socket.emit('unoYou');
 }
 
+// Show the game options
 function showOptions() {
-    // Display the game options
     document.getElementById('options').style.display = 'flex';
 }
 
+// Save the game options
 function saveOptions() {
-    // Save the chosen game options and send to the server
     document.getElementById('options').style.display = 'none';
     let checkboxes = document.querySelectorAll('#options input[type="checkbox"]:checked');
     let selectedValues = Array.from(checkboxes).map(checkbox => checkbox.value);
@@ -602,8 +599,8 @@ function saveOptions() {
     socket.emit('saveOptions', {options: selectedValues});
 }
 
+// Initialize the game
 function init() {
-    // Load initial state
     cards.src = 'images/deck_full.png';
     back.src = 'images/quno.png';
   
@@ -628,6 +625,7 @@ function init() {
     socket.connect();
 }
 
+// Show the boot confirmation modal
 function showBootModal(playerName) {
     const modal = document.getElementById('bootModal');
     const msg = document.getElementById('bootMessage');
@@ -647,12 +645,14 @@ function showBootModal(playerName) {
     };
 }
 
+// Play a sound effect
 function playSound(src, volume=1.0) {
     const audio = new Audio(src);
     audio.volume = volume;
     audio.play();
 }
 
+// Get the top card on the discard pile
 function getTopCard() {
     const discard = document.getElementById('discard');
     return {
@@ -661,11 +661,12 @@ function getTopCard() {
     };
 }
 
+// Handle being booted from the game
 socket.on('booted', () => {
     socket.io.opts.reconnection = false; // stop Socket.IO from auto-reconnecting
     socket.disconnect(); // force disconnection from server
 
-    // Optional: replace page content so they can’t keep playing
+    // Replace page content so they can’t keep playing
     document.body.innerHTML = `
         <div style="text-align:center; margin-top:100px;">
             <h1>You have been booted from the game.</h1>

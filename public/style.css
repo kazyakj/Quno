@@ -310,8 +310,8 @@ main .player .hand {
 }
 
 #right-options img {
-    max-width: 80%; /* Make sure the image doesn't exceed the width of its container */
-    height: 200px; /* Maintain aspect ratio */
+    max-width: 80%;
+    height: 200px;
     width: 900px;
 }
 
