@@ -572,35 +572,53 @@ function checkForWin(SocketID) {
     let player = players.get(SocketID);
 
     // They win if they have 0 cards left
-    if(player.Hand.length == 0) {
-        let player = players.get(currentPlayer);
+    if(player.Hand.length === 0) {
+        let winner = players.get(currentPlayer);
 
         // Tally up points
-        getPoints(players);
+        const summary = getPoints(players, winner);
+        summary.winner = winner.Name;
 
         // Let everyone know the game's over
         gameIsOver = true;
         io.emit('turnChange', -1);
-        io.emit('gameOver', player.Name);
-        io.emit('logMessage', player.Name + ' won the game');
+        io.emit('handSummary', summary);
+        io.emit('gameOver', winner.Name);
+        io.emit('logMessage', winner.Name + ' won the game');
     }
 }
 
 // Tally up points at the end of a hand
-function getPoints(players) {
-    let points = 0;
+function getPoints(players, winner) {
+    let pointsThisHand = 0;
+    const breakdown = [];
 
     // Count value of cards in each player's hand
     players.forEach((player) => {
-        player.Hand.forEach((card) => {
-            points += card.Value;
-        });
+        if (player.SocketID !== winner.SocketID) {
+            const pts = player.Hand.reduce((sum, card) => sum + card.Value, 0);
+
+            breakdown.push({ 
+                name: player.Name, 
+                points: pts 
+            });
+            pointsThisHand += pts;
+        }
     });
 
     // Update the scores
-    let player = players.get(currentPlayer);
-    player.Points += points;
-    io.emit('updateScore', player.PlayerID, player.Points);
+    winner.Points += pointsThisHand;
+    io.emit('updateScore', winner.PlayerID, winner.Points);
+
+    const standings = Array.from(players.values())
+        .map(p => ({ name: p.Name, points: p.Points }))
+        .sort((a, b) => b.points - a.points);
+
+    return { 
+        pointsThisHand, 
+        breakdown,
+        standings 
+    };
 }
 
 // Discard a card

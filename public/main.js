@@ -675,5 +675,44 @@ socket.on('booted', () => {
     `;
 });
 
+// Show end-of-hand summary
+socket.on('handSummary', function(summary) {
+    const modal = document.getElementById('handSummaryModal');
+    const content = document.getElementById('handSummaryContent');
+
+    let html = `
+        <h2>Hand Summary</h2>
+        <p><strong>Winner: </strong>${summary.winner}</p>
+        <p><strong>Points This Hand: </strong>${summary.pointsThisHand}</p>
+        <hr>
+        <h3>Points Earned From:</h3>
+        <ul>
+    `;
+
+    summary.breakdown.forEach(b => {
+        html += `<li>${b.name}: ${b.points}</li>`;
+    });
+
+    html += `
+        </ul><hr>
+        <h3>Standings:</h3>
+        <ol>
+    `;
+
+    summary.standings.forEach(s => {
+        html += `<li>${s.name}: ${s.points}</li>`;
+    });
+
+    html += `</ol>`;
+
+    content.innerHTML = html;
+    modal.style.display = 'flex';
+});
+
+// Close the hand summary modal
+function closeHandSummary() {
+    document.getElementById('handSummaryModal').style.display = 'none';
+}
+
 
 init();
