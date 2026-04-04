@@ -15,6 +15,7 @@ let currentColor = null;
 let bootTargetId = null;
 let requiredPlay = [];
 let playersInLobby = [];
+let gameInProgress = false;
 
 const sidePanel = document.getElementById('side-panel');
 const collapseButton = document.getElementById('collapse-btn');
@@ -68,6 +69,7 @@ socket.on('updateOptions', function(options) {
 socket.on('gameStarted', function(playerList) {
     players = playerList.length;
     document.getElementById('waitingOverlay').style.display="none";
+    gameInProgress = true;
 
     playSound('audio/game-start.wav', 0.2);
 
@@ -91,6 +93,8 @@ socket.on('gameStarted', function(playerList) {
 
 // Show or hide waiting overlay for non-host players
 function updateWaitingOverlay() {
+    if (gameInProgress) return;
+
     const overlay = document.getElementById('waitingOverlay');
     if (!isPlayerA) {
         overlay.style.display = 'flex';
@@ -236,6 +240,7 @@ socket.on('updateScore', function(player, points) {
 // Handle game over
 socket.on('gameOver', function(playerName) {
     playSound('audio/game-over.wav');
+    gameInProgress = false;
 
     // Display a winner message
     document.getElementById('status').innerHTML = playerName + ' WON';
