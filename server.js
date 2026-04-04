@@ -721,6 +721,7 @@ function startGame() {
         player.HasCalledUnoYou = false;
         player.LastUnoMeTime = 0;
         player.LastUnoYouTime = 0;
+        player.WaitingForColorChoice = false;
         if(player.PlayerID == currentPlayerID) {
             currentPlayer = player.SocketID;
         }

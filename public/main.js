@@ -76,6 +76,7 @@ socket.on('gameStarted', function(playerList) {
     document.getElementById('btnDeal').style.display="none";
     document.getElementById('uno-buttons').style.display="flex";
     document.getElementById('discard').style.display="inline-block";
+    document.getElementById('color-buttons').style.display="none";
 
     // Get this player's ID
     for(let i = 0; i < players; i++) {
