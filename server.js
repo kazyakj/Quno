@@ -111,6 +111,8 @@ function onConnection(socket) {
             io.emit('setHost', hostName);
         }
 
+        io.to(socket.id).emit('updateOptions', {playWildDraw4});
+
         let people;
         try {
             people = io.engine.clientsCount;
