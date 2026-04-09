@@ -208,6 +208,14 @@ main #status {
 }
 
 .points {
+    text-align: left;
+    font-size: 12pt;
+    font-weight: bold;
+    margin: 10px;
+    float: left;
+}
+
+.hands-won {
     text-align: right;
     font-size: 12pt;
     font-weight: bold;
@@ -244,6 +252,7 @@ main .player .hand {
     position: relative;
     height: calc(var(--card-height) * 0.6); /* adjust for scaled cards */
     padding-left: 20px;
+    clear: left;
 }
 
 #color-buttons {

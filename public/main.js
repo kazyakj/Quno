@@ -16,6 +16,7 @@ let bootTargetId = null;
 let requiredPlay = [];
 let playersInLobby = [];
 let gameInProgress = false;
+let isDrawing = false;
 
 const sidePanel = document.getElementById('side-panel');
 const collapseButton = document.getElementById('collapse-btn');
@@ -233,8 +234,9 @@ socket.on('notCalledUnoYou', function() {
 });
 
 // Update the points of the player who won the game
-socket.on('updateScore', function(player, points) {
-    document.getElementById('points_' + player).innerHTML = points;
+socket.on('updateScore', function(player, points, handsWon) {
+    document.getElementById('points_' + player).innerHTML = 'Points: ' + points;
+    document.getElementById('handsWon_' + player).innerHTML = 'Hands Won: ' + handsWon;
 });
 
 // Handle game over
@@ -262,16 +264,30 @@ socket.on('renderCard', function(card, player) {
 
     repositionCards(player);
 
-    let myTurn = document.getElementById('player_' + playerId).classList.contains('active');
-
-    if(player.SocketID == socketId && myTurn) {
-        const topCard = getTopCard();
-
-        const activeColor = currentColor || topCard.Color;
-
-        updatePlayableCards(topCard, activeColor);
+    if(!isDrawing && player.SocketID == socketId) {
+        const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
+        if (myTurn) {
+            const topCard = getTopCard();
+            const activeColor = currentColor || topCard.Color;
+            updatePlayableCards(topCard, activeColor);
+        }
     }
 });
+
+socket.on('drawStart', function() {
+    isDrawing = true;
+    const hand = document.getElementById('hand_' + playerId);
+    if (hand) hand.querySelectorAll('.card').forEach(c => c.classList.add('unplayable'));
+});
+
+socket.on('drawEnd', function() {
+    isDrawing = false;
+    const myTurn = document.getElementById('player_' + playerId).classList.contains('active');  
+    if (myTurn) {
+        const topCard = getTopCard();
+        updatePlayableCards(topCard, currentColor);
+    }
+});  
 
 // Display log messages
 socket.on('logMessage', function(message) {
@@ -429,8 +445,9 @@ function updatePlayableCards(topCard, currentColor) {
 
 // Attempt to play a card
 function playCard(card, player) {
-    socket.emit('playCard', card);
+    if (isDrawing) return;
 
+    socket.emit('playCard', card);
     repositionCards(player);
 }
 
@@ -509,6 +526,7 @@ function createPlayersUI(players) {
         let div_player_name = document.createElement('div');
         let div_hand = document.createElement('div');
         let div_points = document.createElement('div');
+        let div_hands_won = document.createElement('div');
 
         if(isPlayerA) {
             div_player_name.style.cursor = 'pointer';
@@ -518,6 +536,8 @@ function createPlayersUI(players) {
         div_player_name.className = 'name';
         div_points.className = 'points';
         div_points.id = 'points_' + players[i].PlayerID;
+        div_hands_won.className = 'hands-won';
+        div_hands_won.id = 'handsWon_' + players[i].PlayerID;
         div_player.className = 'player';
         div_player.id = 'player_' + players[i].PlayerID;
         div_hand.className = 'hand';
@@ -525,10 +545,11 @@ function createPlayersUI(players) {
 
         div_player_name.innerHTML = players[i].Name;
         div_points.innerHTML = 'Points: ' + players[i].Points;
-        div_player.appendChild(div_hand);
+        div_hands_won.innerHTML = 'Hands Won: ' + players[i].HandsWon;
         div_player.appendChild(div_player_name);
+        div_player.appendChild(div_hand);
         div_player.appendChild(div_points);
-
+        div_player.appendChild(div_hands_won);
         if(players[i].SocketID == socketId) {
             // Add the player to the bottom of the screen
             document.getElementById('playerSelf').appendChild(div_player);
@@ -626,6 +647,8 @@ function init() {
             setCookie('playerName', playerName, 24 * 3600);
         }
     }
+
+    playerName = playerName.substring(0, 29);
   
     // Connect to the server
     socket.connect();
@@ -689,7 +712,9 @@ socket.on('handSummary', function(summary) {
     let html = `
         <h2>Hand Summary</h2>
         <p><strong>Winner: </strong>${summary.winner}</p>
-        <p><strong>Points This Hand: </strong>${summary.pointsThisHand}</p>
+        <p><strong>Points this hand: </strong>${summary.pointsThisHand}</p>
+        <p><strong>Hand duration: </strong>${formatDuration(summary.handDuration)}</p>
+        <p><strong>Cards played: </strong>${summary.handCardsPlayed}</p>
         <hr>
         <h3>Points Earned From:</h3>
         <ul>
@@ -701,6 +726,7 @@ socket.on('handSummary', function(summary) {
 
     html += `
         </ul><hr>
+        <h2>Match Stats</h2>
         <h3>Standings:</h3>
         <ol>
     `;
@@ -709,11 +735,33 @@ socket.on('handSummary', function(summary) {
         html += `<li>${s.name}: ${s.points}</li>`;
     });
 
-    html += `</ol>`;
+    html += `
+        </ol><hr>
+        <p><strong>Match duration: </strong>${formatDuration(summary.matchDuration)}</p>
+        <p><strong>Hands played: </strong>${summary.handsPlayed}</p>
+        <p><strong>Cards played: </strong>${summary.matchCardsPlayed.toLocaleString()}</p>
+    `;
 
     content.innerHTML = html;
     modal.style.display = 'flex';
 });
+
+// Format a duration in seconds into a human-readable string
+function formatDuration(totalSeconds) {
+    const seconds = Number(totalSeconds);
+
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.round(seconds % 60);
+
+    return [
+        hours ? `${hours}h` : null,
+        minutes ? `${minutes}m` : null,
+        secs || (!hours && !minutes) ? `${secs}s` : null
+    ]
+        .filter(Boolean)
+        .join(' ');
+}
 
 // Close the hand summary modal
 function closeHandSummary() {
