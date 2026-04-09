@@ -32,6 +32,12 @@ let reverseDraw4 = false;
 let gameIsOver = false;
 let cardList = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'skip', 'reverse', 'draw2', 'wild', 'draw4']
 let requiredPlay = new Array();
+let pendingWinnerSocketId = null;
+let matchStartTime = null;
+let handStartTime = null;
+let handsPlayed = 0;
+let matchCardsPlayed = 0;
+let handCardsPlayed = 0;
 
 
 /**
@@ -94,6 +100,7 @@ function onConnection(socket) {
      * @return responseRoom and # of players if there's an open slot, otherwise error.
      */
     socket.on('requestJoin', function(playerName) {
+        playerName = playerName.substring(0, 29);
         socket.playerName = playerName;
 
         // If there's no primary player, make the new player primary
@@ -129,6 +136,9 @@ function onConnection(socket) {
     // Start a new match
     socket.on('resetGame', function() {
         let playerCount = io.engine.clientsCount;
+        matchStartTime = Date.now();
+        handsPlayed = 0;
+        matchCardsPlayed = 0;
 
         if(playerCount > 1) {
             io.emit('logMessage', 'A new match was started');
@@ -171,6 +181,7 @@ function onConnection(socket) {
             // Let them play if they have the right color or card value, or if it's a wild
             // In some scenarios, like stacking draw 2s, there's another check to see if there's a certain requirement for the next play
             if((colorMatch || typeMatch || wild || draw4wild) && (requiredPlay.length == 0 || requiredPlay.includes(playType))) {
+                handCardsPlayed++;
                 requiredPlay = new Array();
                 io.to(currentPlayer).emit('requiredPlay', requiredPlay);
                 discardCard(card, socket.id);
@@ -178,7 +189,10 @@ function onConnection(socket) {
                 io.emit('logMessage', socket.playerName + ' played a ' + playColor + ' ' + playType);
 
                 // See if the player won after playing their card
-                checkForWin(socket.id);
+                const isDefferedWin = (playType === 'draw2' || playType === 'draw4');
+                if (!isDefferedWin) {
+                    checkForWin(socket.id);
+                }
 
                 if(playType == 'wild') {
                     // Wild - have the player choose a new color
@@ -195,17 +209,35 @@ function onConnection(socket) {
                     if(reverseDraw4) requiredPlay.push('reverse');
                     io.to(socket.id).emit('chooseColor');
                 } else if(playType == 'skip' || (playType == 'reverse' && players.size == 2)) {
+                    
+                    if (players.get(socket.id).Hand.length === 0) {
+                        pendingWinnerSocketId = socket.id;
+                    }
+                    
                     // Skip - jump over the next player
                     await nextTurn(true);
 
                     // If there are cards remaining to be drawn (e.g. a skip was played on a draw 2) then draw those cards
                     if (cardsToDraw > 0) {
                         await drawCards(currentPlayer, cardsToDraw);
+                        requiredPlay = [];
+                        io.emit('requiredPlay', requiredPlay);
+                        if (pendingWinnerSocketId) {
+                            checkForWin(pendingWinnerSocketId);
+                            pendingWinnerSocketId = null;
+                        }
+                        nextTurn();
+                    } else {
+                        requiredPlay = [];
+                        io.emit('requiredPlay', requiredPlay);
+                        nextTurn();
                     }
-                    requiredPlay = [];
-                    io.emit('requiredPlay', requiredPlay);
-                    nextTurn();
                 } else if(playType == 'reverse') {
+
+                    if (players.get(socket.id).Hand.length === 0) {
+                        pendingWinnerSocketId = socket.id;
+                    }
+
                     // Reverse - change the direction of play
                     playDirection = -playDirection;
                     await nextTurn(true);
@@ -213,13 +245,30 @@ function onConnection(socket) {
                     // If there are cards remaining to be drawn (e.g. a reverse was played on a draw 2) then draw those cards
                     if(cardsToDraw > 0) {
                         await drawCards(currentPlayer, cardsToDraw);
+                        requiredPlay = [];
+                        io.emit('requiredPlay', requiredPlay);
+                        if (pendingWinnerSocketId) {
+                            checkForWin(pendingWinnerSocketId);
+                            pendingWinnerSocketId = null;
+                        }
                         nextTurn();
+                    } else {
+                        requiredPlay = [];
+                        io.emit('requiredPlay', requiredPlay);
+                        if (pendingWinnerSocketId) {
+                            checkForWin(pendingWinnerSocketId);
+                            pendingWinnerSocketId = null;
+                        }
+                        if(!gameIsOver && !canPlay(currentPlayer, ['none'])) {
+                            autoDraw(currentPlayer);
+                        }
                     }
-                    requiredPlay = [];
-                    io.emit('requiredPlay', requiredPlay);
                 } else if(playType == 'draw2') {
                     // Draw 2 - queue up 2 more cards to be drawn
                     cardsToDraw += 2;
+                    if (players.get(socket.id).Hand.length === 0) {
+                        pendingWinnerSocketId = socket.id;
+                    }
                     nextTurn(true);
 
                     // Check all the game options for playing on draw 2s
@@ -237,6 +286,10 @@ function onConnection(socket) {
                         await drawCards(currentPlayer, cardsToDraw);
                         requiredPlay = [];
                         io.emit('requiredPlay', requiredPlay);
+                        if (pendingWinnerSocketId) {
+                            checkForWin(pendingWinnerSocketId);
+                            pendingWinnerSocketId = null;
+                        }
                         nextTurn();
                     }
                 } else {
@@ -266,6 +319,9 @@ function onConnection(socket) {
         
         // For handling wild draw 4
         if(cardsToDraw > 0) {
+            if (players.get(socket.id).Hand.length === 0) {
+                pendingWinnerSocketId = socket.id;
+            }
             await nextTurn(true);
 
             requiredPlay = [];
@@ -283,6 +339,10 @@ function onConnection(socket) {
                 await drawCards(currentPlayer, cardsToDraw);
                 requiredPlay = [];
                 io.emit('requiredPlay', requiredPlay);
+                if (pendingWinnerSocketId) {
+                    checkForWin(pendingWinnerSocketId);
+                    pendingWinnerSocketId = null;
+                }
                 nextTurn();
             }
         } else {
@@ -344,7 +404,7 @@ function onConnection(socket) {
             // Iterate through all players and see if they have 1 card + haven't called Uno
             if(player.Hand.length == 1 && !player.HasCalledUno && !recentlyCalledUnoMe) {
                 // Draw cards if they're caught
-                io.emit('logMessage', player.Name + ' had Uno called on them');
+                io.emit('logMessage', player.Name + ' had Uno called on them by ' + caller.Name);
                 drawCards(player.SocketID, 4);
                 player.LastUnoYouTime = Date.now();
             };
@@ -449,6 +509,7 @@ function createPlayers() {
             Name: socket.playerName, 
             PlayerID: i, 
             Points: 0, 
+            HandsWon: 0,
             Hand: hand, 
             SocketID: socket.id, 
             HasCalledUno: false, 
@@ -540,12 +601,17 @@ function drawCards(SocketID, num) {
     player.HasCalledUno = false;
     io.to(SocketID).emit('notCalledUnoMe');
 
+    io.to(SocketID).emit('drawStart');
+
     return new Promise((resolve) => {
         for (let i = 0; i < num; i++) {
             // Delay between each card draw
             setTimeout(() => {
                 performDraw(player);
-                if (i === num - 1) resolve();
+                if (i === num - 1) {
+                    io.to(SocketID).emit('drawEnd');
+                    resolve();
+                }
             }, i * CARD_DRAW_DELAY_MS);
         }
     });
@@ -553,6 +619,7 @@ function drawCards(SocketID, num) {
 
 // Automatically draw cards until the player can play
 function autoDraw(SocketID) {
+    if (gameIsOver) return Promise.resolve();
     const player = players.get(SocketID);
     if (!player) return Promise.resolve();
 
@@ -581,11 +648,18 @@ function checkForWin(SocketID) {
 
     // They win if they have 0 cards left
     if(player.Hand.length === 0) {
-        let winner = players.get(currentPlayer);
+        let winner = players.get(SocketID);
 
         // Tally up points
         const summary = getPoints(players, winner);
         summary.winner = winner.Name;
+        summary.handDuration = (Date.now() - handStartTime) / 1000;
+        summary.matchDuration = (Date.now() - matchStartTime) / 1000;
+        handsPlayed++;
+        matchCardsPlayed += handCardsPlayed;
+        summary.handsPlayed = handsPlayed;
+        summary.handCardsPlayed = handCardsPlayed;
+        summary.matchCardsPlayed = matchCardsPlayed;
 
         // Let everyone know the game's over
         gameIsOver = true;
@@ -616,7 +690,8 @@ function getPoints(players, winner) {
 
     // Update the scores
     winner.Points += pointsThisHand;
-    io.emit('updateScore', winner.PlayerID, winner.Points);
+    winner.HandsWon++;
+    io.emit('updateScore', winner.PlayerID, winner.Points, winner.HandsWon);
 
     const standings = Array.from(players.values())
         .map(p => ({ name: p.Name, points: p.Points }))
@@ -710,6 +785,9 @@ async function startGame() {
     gameIsOver = false;
     playDirection = -1;
     cardsToDraw = 0;
+    pendingWinnerSocketId = null;
+    handStartTime = Date.now();
+    handCardsPlayed = 0;
     discardPile = new Array();
     requiredPlay = new Array();
     io.emit('requiredPlay', requiredPlay);
