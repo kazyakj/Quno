@@ -152,6 +152,7 @@ function onConnection(socket) {
     // Deal a new hand without resetting the players
     socket.on('newHand', function() {
         io.emit('logMessage', 'A new hand was dealt');
+        reshuffleSeats();
         startGame();
     });
 
@@ -778,6 +779,21 @@ function canPlay(currentPlayer, invalidCards) {
             card.Color === 'black' ||
             card.Type === currentType
         );
+    });
+}
+
+// Shuffle PlayerIDs to rotate seats
+function reshuffleSeats() {
+    const playerArray = Array.from(players.values());
+    const ids = playerArray.map(p => p.PlayerID);
+
+    for (let i = ids.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [ids[i], ids[j]] = [ids[j], ids[i]];
+    }
+
+    playerArray.forEach((player, index) => {
+        player.PlayerID = ids[index];
     });
 }
 
