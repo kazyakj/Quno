@@ -272,7 +272,7 @@ function onConnection(socket) {
                     if (players.get(socket.id).Hand.length === 0) {
                         pendingWinnerSocketId = socket.id;
                     }
-                    nextTurn(true);
+                    await nextTurn(true);
 
                     // Check all the game options for playing on draw 2s
                     requiredPlay = [];
