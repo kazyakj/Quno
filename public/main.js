@@ -31,6 +31,82 @@ socket.on('connect', function() {
     socket.emit('requestJoin', playerName);
 });
 
+// Rebuild the full game state when rejoining after a disconnect
+socket.on('rejoinState', function(state) {
+    socketId = state.mySocketId;
+    gameInProgress = !state.gameIsOver;
+    isPlayerA = state.isHost;
+    currentColor = state.currentColor;
+    requiredPlay = state.requiredPlay || [];
+
+    for (let p of state.playerList) {
+        if (p.SocketID === socketId) {
+            playerId = p.PlayerID;
+            break;
+        }
+    }
+
+    document.getElementById('waitingOverlay').style.display = 'none';
+    document.getElementById('status').style.display = 'none';
+    document.getElementById('uno-buttons').style.display = 'flex';
+    document.getElementById('discard').style.display = 'inline-block';
+    document.getElementById('color-buttons').style.display = 'none';
+
+    if (isPlayerA) {
+        document.getElementById('btnStart').style.display="inline-block";
+        document.getElementById('btnOptions').style.display="inline-block";
+        if (state.gameIsOver) {
+            document.getElementById('btnDeal').style.display="inline-block";
+        }
+    }
+
+    createPlayersUI(state.playerList);
+
+    // Update the player list header at the top
+    playersInLobby = state.playersInLobby;
+    const playerListDiv = document.getElementById('playerList');
+    playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
+    state.playersInLobby.forEach(name => {
+        const span = document.createElement('span');
+        span.style.marginRight = '10px';
+        const isHost = (name === state.hostName);
+        span.innerHTML = isHost ? `<span class="crown">👑</span>${name}` : name;
+        playerListDiv.appendChild(span);
+    });
+
+    for (let player of state.playerList) {
+        for (let card of player.Hand) {
+            let hand = document.getElementById('hand_' + player.PlayerID);
+            if (!hand) continue;
+            let cardObj = getCardUI(card, player);
+            cardObj.classList.add('unplayable');
+            hand.appendChild(cardObj);
+        }
+        repositionCards(player);
+    }
+
+    if (state.topCard) {
+        let cardObj = getCardUI(state.topCard);
+        cardObj.id = 'discard';
+        let discard = document.getElementById('discard');
+        discard.parentNode.replaceChild(cardObj, discard);
+        document.getElementById('color-bar').style.background = state.currentColor || 'rgb(184, 184, 184)';
+    }
+
+    if (state.currentPlayerId >= 0) {
+        document.querySelectorAll('.player').forEach(p => p.classList.remove('active'));
+        const activeEl = document.getElementById('player_' + state.currentPlayerId);
+        if (activeEl) activeEl.classList.add('active');
+
+        if (state.currentPlayerId == playerId) {
+            const topCard = getTopCard();
+            updatePlayableCards(topCard, state.currentColor);
+        }
+    }
+
+    window.playWildDraw4Enabled = state.playWildDraw4;
+});
+
 // Set the game host
 socket.on('setHost', function(name) {
     playerAName = name;
@@ -103,6 +179,12 @@ function updateWaitingOverlay() {
         overlay.style.display = 'none';
     }
 }
+
+// Remove a player's in-game panel when they leave without rejoining
+socket.on('playerLeft', function({ playerId: leftPlayerId }) {
+    const panel = document.getElementById('player_' + leftPlayerId);
+    if (panel) panel.remove();
+});
 
 // Update the player list when a new player joins
 socket.on('newPlayer', function(data) {
