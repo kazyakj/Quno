@@ -81,15 +81,45 @@ function onConnection(socket) {
 
     // Remove a player if they leave
     socket.on('disconnect', () => {
-        playersInLobby = playersInLobby.filter(player => player !== socket.playerName);
-        io.emit('newPlayer', { players: playersInLobby, host: hostName });
+        const disconnectedName = socket.playerName;
+        const disconnectedId = socket.id;
+        const REJOIN_GRACE_MS = 10000;
 
-        if(socket.id == playerA && socket.playerName === hostName) {
-            const stillHere = Array.from(io.sockets.sockets.values()).some(s => s.playerName === hostName);
-            if(!stillHere) {
-                playerA = null;
+        setTimeout(() => {
+            // Check if the player rejoined witha a new socket
+            const hasRejoined = Array.from(players.values()).some(
+                p => p.Name === disconnectedName
+            );
+
+            if (!hasRejoined) {
+                // They didn't come back - remove them from the game
+                playersInLobby = playersInLobby.filter(p => p !== disconnectedName);
+                const leavingPlayer = players.get(disconnectedId);
+                const leavingPlayerId = leavingPlayer ? leavingPlayer.PlayerID: -1;
+                players.delete(disconnectedId);
+                io.emit('playerLeft', { playerName: disconnectedName, playerId: leavingPlayerId});
+                io.emit('newPlayer', { players: playersInLobby, host: hostName });
+                io.emit('logMessage', disconnectedName + ' left the game');
+
+                if (disconnectedId === playerA) {
+                    playerA = null;
+                    hostName = null;
+                    // Promote the next player to be the host if the host left
+                    const nextSocket = Array.from(io.sockets.sockets.values())[0];
+                    if (nextSocket) {
+                        playerA = nextSocket.id;
+                        hostName = nextSocket.playerName;
+                        io.to(nextSocket.id).emit('isPlayerA');
+                        io.emit('setHost', hostName);
+                        io.emit('newPlayer', { players: playersInLobby, host: hostName });
+                    }
+                }
+
+                if (disconnectedId === currentPlayer && !gameIsOver) {
+                    nextTurn();
+                }
             }
-        }
+        }, REJOIN_GRACE_MS);
     });
 
     /**
@@ -102,6 +132,52 @@ function onConnection(socket) {
     socket.on('requestJoin', function(playerName) {
         playerName = playerName.substring(0, 29);
         socket.playerName = playerName;
+
+        // Check if this is a player rejoining with a new socket after disconnecting
+        let rejoiningPlayer = null;
+        for (let [oldSocketId, player] of players.entries()) {
+            if (player.Name === playerName) {
+                rejoiningPlayer = player;
+                // Swap the old socket ID with the new one for the rejoining player
+                players.delete(oldSocketId);
+                player.SocketID = socket.id;
+                players.set(socket.id, player);
+
+                // If the rejoining player was the current player, update that too
+                if (currentPlayer === oldSocketId) {
+                    currentPlayer = socket.id;
+                }
+                // If they were the host, reassign host socket
+                if (oldSocketId === playerA) {
+                    playerA = socket.id;
+                }
+                break;
+            }
+        }
+
+        if (rejoiningPlayer) {
+            // Send the full game state to the rejoining player
+            const currentPlayerObj = players.get(currentPlayer);
+            io.to(socket.id).emit('rejoinState', {
+                playerList: Array.from(players.values()),
+                mySocketId: socket.id,
+                currentPlayerId: currentPlayerObj ? currentPlayerObj.PlayerID : -1,
+                currentColor: currentColor,
+                topCard: discardPile.length > 0 ? discardPile[discardPile.length - 1] : null,
+                gameIsOver: gameIsOver,
+                requiredPlay: requiredPlay,
+                isHost: socket.id === playerA,
+                hostName: hostName,
+                playersInLobby: playersInLobby,
+                playWildDraw4
+            }); 
+            io.emit('logMessage', playerName + ' rejoined the game');
+            if (socket.id === playerA) {
+                io.to(socket.id).emit('isPlayerA');
+                io.emit('setHost', hostName);
+            }
+            return;
+        }
 
         // If there's no primary player, make the new player primary
         if(playerA == null) {
