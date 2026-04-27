@@ -239,10 +239,13 @@ main #status {
 
 #color-bar {
     width: var(--card-width);
-    height: 20px;
+    height: 26px;
     background: rgb(184, 184, 184);
-    padding-bottom: 10px;
+    padding-bottom: 0;
     transform: translate(0, -50%);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
 }
 
 main .player .hand {
@@ -264,18 +267,45 @@ main .player .hand {
 
 #btnYellow {
     background-color: #FFAA01;
+    border: 3px solid #b87800 !important;
+    color: #5a3a00 !important;
+    background-image: repeating-linear-gradient(
+        90deg, 
+        rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 2px,
+        transparent 2px, transparent 8px
+    ),
+    repeating-linear-gradient(
+        0deg,
+        rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 2px,
+        transparent 2px, transparent 8px
+    );
 }
 
 #btnGreen {
     background-color: #55AA55;
+    border: 3px solid #2d7a2d !important;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.35) 2px, transparent 2px);
+    background-size: 10px 10px;
 }
 
 #btnBlue {
     background-color: #5455FF;
+    border: 3px solid #2020cc !important;
+    background-image: repeating-linear-gradient(
+        -45deg,
+        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 2px,
+        transparent 2px, transparent 8px
+    );
 }
 
 #btnRed {
     background-color: #FF5555;
+    border: 3px solid #cc1111 !important;
+    background-image: repeating-linear-gradient(
+        0deg,
+        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 2px,
+        transparent 2px, transparent 8px
+    );
 }
 
 #uno-buttons {

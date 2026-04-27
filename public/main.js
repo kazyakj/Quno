@@ -90,7 +90,7 @@ socket.on('rejoinState', function(state) {
         cardObj.id = 'discard';
         let discard = document.getElementById('discard');
         discard.parentNode.replaceChild(cardObj, discard);
-        document.getElementById('color-bar').style.background = state.currentColor || 'rgb(184, 184, 184)';
+        updateColorBar(state.currentColor || null);
     }
 
     if (state.currentPlayerId >= 0) {
@@ -237,12 +237,12 @@ socket.on('chooseColor', function() {
 // Display which color was selected after a wild is played
 socket.on('colorChosen', function(color) {
     currentColor = color;
-    document.getElementById('color-bar').style.background=color;
+    updateColorBar(color);
 });
 
 // Hide the color bar after move past a wild
 socket.on('hideColor', function() {
-    document.getElementById('color-bar').style.background="rgb(184, 184, 184)";
+    updateColorBar(null);
 });
 
 // Update the list of allowable plays for the player
@@ -398,6 +398,112 @@ socket.on('logMessage', function(message) {
     messageContainer.insertBefore(messageElement, messageContainer.firstChild);
 });
 
+// Returns an SVG pattern overlay element for a given card color
+function getColorPatternSVG(color) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;border-radius:13px;overflow:hidden;';
+
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    const patternEl = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
+    const patternId = 'cbp_' + color + '_' + Math.random().toString(36).substr(2, 7);
+    patternEl.setAttribute("id", patternId);
+    patternEl.setAttribute("patternUnits", "userSpaceOnUse");
+
+    const patternColor = (color === 'yellow') ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.2)';
+
+    if (color === 'red') {
+        // Horizontal stripes
+        patternEl.setAttribute("width", "10");
+        patternEl.setAttribute("height", "10");
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", "0"); line.setAttribute("y1", "5");
+        line.setAttribute("x2", "10"); line.setAttribute("y2", "5");
+        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "4");
+        patternEl.appendChild(line);
+    } else if (color === 'green') {
+        // Dots
+        patternEl.setAttribute("width", "12");
+        patternEl.setAttribute("height", "12");
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", "6"); circle.setAttribute("cy", "6"); circle.setAttribute("r", "3");
+        circle.setAttribute("fill", patternColor);
+        patternEl.appendChild(circle);
+    } else if (color === 'blue') {
+        // Diagonal lines
+        patternEl.setAttribute("width", "10");
+        patternEl.setAttribute("height", "10");
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", "0"); line.setAttribute("y1", "10");
+        line.setAttribute("x2", "10"); line.setAttribute("y2", "0");
+        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "4");
+        patternEl.appendChild(line);
+    } else if (color === 'yellow') {
+        // Crosshatch
+        patternEl.setAttribute("width", "10");
+        patternEl.setAttribute("height", "10");
+        const l1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        l1.setAttribute("x1", "0"); l1.setAttribute("y1", "0");
+        l1.setAttribute("x2", "0"); l1.setAttribute("y2", "10");
+        l1.setAttribute("stroke", patternColor); l1.setAttribute("stroke-width", "3");
+        const l2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        l2.setAttribute("x1", "0"); l2.setAttribute("y1", "0");
+        l2.setAttribute("x2", "10"); l2.setAttribute("y2", "0");
+        l2.setAttribute("stroke", patternColor); l2.setAttribute("stroke-width", "3");
+        patternEl.appendChild(l1);
+        patternEl.appendChild(l2);
+    } else {
+        return null; // No pattern for black cards
+    }
+
+    defs.appendChild(patternEl);
+    svg.appendChild(defs);
+
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("width", "100%");
+    rect.setAttribute("height", "100%");
+    rect.setAttribute("fill", `url(#${patternId})`);
+    svg.appendChild(rect);
+
+    return svg;
+}
+
+// Apply pattern + text label to the color bar
+function updateColorBar(color) {
+    const bar = document.getElementById('color-bar');
+    if (!color || color === 'rgb(184, 184, 184)') {
+        bar.style.background = 'rgb(184, 184, 184)';
+        bar.innerHTML = '';
+        return;
+    }
+
+    const colorNames = { red: 'Red', green: 'Green', blue: 'Blue', yellow: 'Yellow' };
+    const label = colorNames[color] || color;
+    const textColor = (color === 'yellow') ? '#5a3a00' : 'white';
+
+    bar.style.background = color;
+    bar.style.position = 'relative';
+    bar.style.display = 'flex';
+    bar.style.alignItems = 'center';
+    bar.style.justifyContent = 'center';
+
+    // Clear old content and rebuild
+    bar.innerHTML = '';
+
+    const svgOverlay = getColorPatternSVG(color);
+    if (svgOverlay) {
+        svgOverlay.style.borderRadius = '0';
+        bar.appendChild(svgOverlay);
+    }
+
+    const span = document.createElement('span');
+    span.textContent = label;
+    span.style.cssText = `position:relative;z-index:1;font-size:11px;font-weight:bold;color:${textColor};letter-spacing:0.05em;`;
+    bar.appendChild(span);
+}
+
 // Create the UI element for a card
 function getCardUI(card, player) {
     let cardObj = document.createElement('div');
@@ -415,6 +521,11 @@ function getCardUI(card, player) {
         const offsetY = 1440 - cdHeight * Math.floor(card.ID / 14);
         cardObj.style.backgroundImage = 'url(' + cards.src + ')';
         cardObj.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
+
+        // Inject colorblind pattern overlay
+        cardObj.style.position = 'relative';
+        const patternOverlay = getColorPatternSVG(card.Color);
+        if (patternOverlay) cardObj.appendChild(patternOverlay);
 
         if(player != null) {
             // Make the card clickable if it's for the player
