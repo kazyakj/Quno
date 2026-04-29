@@ -412,48 +412,34 @@ function getColorPatternSVG(color) {
     patternEl.setAttribute("id", patternId);
     patternEl.setAttribute("patternUnits", "userSpaceOnUse");
 
-    const patternColor = (color === 'yellow') ? 'rgba(0,0,0,0.13)' : 'rgba(255,255,255,0.2)';
+    const patternColor = 'rgba(255,255,255,0.45)';
 
     if (color === 'red') {
         // Horizontal stripes
-        patternEl.setAttribute("width", "10");
-        patternEl.setAttribute("height", "10");
+        patternEl.setAttribute("width", "9");
+        patternEl.setAttribute("height", "9");
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
         line.setAttribute("x1", "0"); line.setAttribute("y1", "5");
-        line.setAttribute("x2", "10"); line.setAttribute("y2", "5");
-        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "4");
+        line.setAttribute("x2", "9"); line.setAttribute("y2", "5");
+        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "5");
         patternEl.appendChild(line);
     } else if (color === 'green') {
         // Dots
-        patternEl.setAttribute("width", "12");
-        patternEl.setAttribute("height", "12");
+        patternEl.setAttribute("width", "9");
+        patternEl.setAttribute("height", "9");
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("cx", "6"); circle.setAttribute("cy", "6"); circle.setAttribute("r", "3");
+        circle.setAttribute("cx", "6"); circle.setAttribute("cy", "6"); circle.setAttribute("r", "4");
         circle.setAttribute("fill", patternColor);
         patternEl.appendChild(circle);
     } else if (color === 'blue') {
         // Diagonal lines
-        patternEl.setAttribute("width", "10");
-        patternEl.setAttribute("height", "10");
+        patternEl.setAttribute("width", "12");
+        patternEl.setAttribute("height", "12");
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        line.setAttribute("x1", "0"); line.setAttribute("y1", "10");
-        line.setAttribute("x2", "10"); line.setAttribute("y2", "0");
-        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "4");
+        line.setAttribute("x1", "0"); line.setAttribute("y1", "12");
+        line.setAttribute("x2", "12"); line.setAttribute("y2", "0");
+        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "3");
         patternEl.appendChild(line);
-    } else if (color === 'yellow') {
-        // Crosshatch
-        patternEl.setAttribute("width", "10");
-        patternEl.setAttribute("height", "10");
-        const l1 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        l1.setAttribute("x1", "0"); l1.setAttribute("y1", "0");
-        l1.setAttribute("x2", "0"); l1.setAttribute("y2", "10");
-        l1.setAttribute("stroke", patternColor); l1.setAttribute("stroke-width", "3");
-        const l2 = document.createElementNS("http://www.w3.org/2000/svg", "line");
-        l2.setAttribute("x1", "0"); l2.setAttribute("y1", "0");
-        l2.setAttribute("x2", "10"); l2.setAttribute("y2", "0");
-        l2.setAttribute("stroke", patternColor); l2.setAttribute("stroke-width", "3");
-        patternEl.appendChild(l1);
-        patternEl.appendChild(l2);
     } else {
         return null; // No pattern for black cards
     }

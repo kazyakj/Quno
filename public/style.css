@@ -268,24 +268,13 @@ main .player .hand {
 #btnYellow {
     background-color: #FFAA01;
     border: 3px solid #b87800 !important;
-    color: #5a3a00 !important;
-    background-image: repeating-linear-gradient(
-        90deg, 
-        rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 2px,
-        transparent 2px, transparent 8px
-    ),
-    repeating-linear-gradient(
-        0deg,
-        rgba(0,0,0,0.10) 0px, rgba(0,0,0,0.10) 2px,
-        transparent 2px, transparent 8px
-    );
 }
 
 #btnGreen {
     background-color: #55AA55;
     border: 3px solid #2d7a2d !important;
-    background-image: radial-gradient(circle, rgba(255,255,255,0.35) 2px, transparent 2px);
-    background-size: 10px 10px;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.6) 3px, transparent 3px);
+    background-size: 9px 9px;
 }
 
 #btnBlue {
@@ -293,8 +282,8 @@ main .player .hand {
     border: 3px solid #2020cc !important;
     background-image: repeating-linear-gradient(
         -45deg,
-        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 2px,
-        transparent 2px, transparent 8px
+        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.45) 3px,
+        transparent 3px, transparent 8px
     );
 }
 
@@ -303,8 +292,8 @@ main .player .hand {
     border: 3px solid #cc1111 !important;
     background-image: repeating-linear-gradient(
         0deg,
-        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.2) 2px,
-        transparent 2px, transparent 8px
+        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.45) 3px,
+        transparent 3px, transparent 8px
     );
 }
 
