@@ -158,8 +158,13 @@ function onConnection(socket) {
         if (rejoiningPlayer) {
             // Send the full game state to the rejoining player
             const currentPlayerObj = players.get(currentPlayer);
+            const sanitizedList = Array.from(players.values()).map(p => ({
+                ...p,
+                Hand: p.SocketID === socket.id ? p.Hand : p.Hand.map(() => ({}))
+            }));
+
             io.to(socket.id).emit('rejoinState', {
-                playerList: Array.from(players.values()),
+                playerList: sanitizedList,
                 mySocketId: socket.id,
                 currentPlayerId: currentPlayerObj ? currentPlayerObj.PlayerID : -1,
                 currentColor: currentColor,
@@ -636,7 +641,8 @@ function dealHands() {
         players.forEach((player) => {
             let card = deck.pop();
             player.Hand.push(card);
-            io.emit('renderCard', card, player);
+            io.to(player.SocketID).emit('renderCard', card, player);
+            io.emit('renderOpponentCard', player.PlayerID);
         });
     }
 
@@ -659,7 +665,8 @@ function performDraw(player) {
 
     const card = deck.pop();
     player.Hand.push(card);
-    io.emit('renderCard', card, player);
+    io.to(player.SocketID).emit('renderCard', card, player);
+    io.emit('renderOpponentCard', player.PlayerID);
 
     io.emit('cardDrawn');
 }

@@ -356,6 +356,21 @@ socket.on('renderCard', function(card, player) {
     }
 });
 
+// Render a face-down card in an opponent's hand
+socket.on('renderOpponentCard', function(playerID) {
+    if (playerID == playerId) return;
+    
+    const hand = document.getElementById('hand_' + playerID);
+    if (!hand) return;
+
+    // Build a blank opponent card object just to get the card-back rendered
+    const cardObj = getCardUI({}, { SocketID: null });
+    hand.appendChild(cardObj);
+
+    // repositionCards expects a player object with SocketID and PlayerID
+    repositionCards({ SocketID: null, PlayerID: playerID });
+});
+
 socket.on('drawStart', function() {
     isDrawing = true;
     const hand = document.getElementById('hand_' + playerId);
@@ -493,14 +508,16 @@ function updateColorBar(color) {
 // Create the UI element for a card
 function getCardUI(card, player) {
     let cardObj = document.createElement('div');
-
     cardObj.className = 'card';
-    cardObj.id = 'card_' + card.ID;
-    cardObj.setAttribute('dataCardColor', card.Color);
-    cardObj.setAttribute('dataCardType', card.Type);
+
+    const isMyCard = (player == null || player.SocketID == socketId);
     
     // Discard pile or the player
-    if(player == null || player.SocketID == socketId) {
+    if(isMyCard) {
+        // Only set revealing attributes on your own cards / discard
+        cardObj.id = 'card_' + card.ID;
+        cardObj.setAttribute('dataCardColor', card.Color);
+        cardObj.setAttribute('dataCardType', card.Type);
 
         // Get card image from sprite sheet
         const offsetX = 2 + 1680 - cdWidth * (card.ID % 14);
@@ -640,7 +657,8 @@ socket.on('discardCard', function(card, player) {
 
     // Ignore the initial discard after a new deal and only handle player discards
     if(player != null) {
-        document.getElementById('card_' + card.ID).remove();
+        const playedCardEl = document.getElementById('card_' + card.ID);
+        if (playedCardEl) playedCardEl.remove();
         repositionCards(player);
     }
 
