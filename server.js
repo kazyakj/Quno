@@ -286,7 +286,8 @@ function onConnection(socket) {
                 io.emit('logMessage', socket.playerName + ' played a ' + playColor + ' ' + playType);
 
                 // See if the player won after playing their card
-                const isDefferedWin = (playType === 'draw2' || playType === 'draw4');
+                const isDefferedWin = (playType === 'draw2' || playType === 'draw4') ||
+                    ((playType === 'skip' || playType === 'reverse') && cardsToDraw > 0);
                 if (!isDefferedWin) {
                     checkForWin(socket.id);
                 }
