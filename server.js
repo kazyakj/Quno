@@ -38,6 +38,7 @@ let handStartTime = null;
 let handsPlayed = 0;
 let matchCardsPlayed = 0;
 let handCardsPlayed = 0;
+let turnStartTime = null;
 
 
 /**
@@ -266,6 +267,18 @@ function onConnection(socket) {
             // In some scenarios, like stacking draw 2s, there's another check to see if there's a certain requirement for the next play
             if((colorMatch || typeMatch || wild || draw4wild) && (requiredPlay.length == 0 || requiredPlay.includes(playType))) {
                 handCardsPlayed++;
+                // Track per-player stats
+                const playingPlayer = players.get(socket.id);
+                if (playingPlayer) {
+                    playingPlayer.HandCardsPlayed++;
+                    playingPlayer.MatchCardsPlayed++;
+                    if (turnStartTime !== null) {
+                        const elapsed = (Date.now() - turnStartTime) / 1000;
+                        playingPlayer.HandTurnTime += elapsed;
+                        playingPlayer.MatchTurnTime += elapsed;
+                    }
+                    turnStartTime = null;
+                }
                 requiredPlay = new Array();
                 io.to(currentPlayer).emit('requiredPlay', requiredPlay);
                 discardCard(card, socket.id);
@@ -600,7 +613,12 @@ function createPlayers() {
             HasCalledUnoMeThisTurn: false,
             HasCalledUnoYou: false, 
             LastUnoMeTime: 0,
-            LastUnoYouTime: 0
+            LastUnoYouTime: 0,
+            HandCardsPlayed: 0,
+            MatchCardsPlayed: 0,
+            HandTurnTime: 0,
+            MatchTurnTime: 0,
+            PointsGivenUp: 0
         };
         player.WaitingForColorChoice = false;
         players.set(socket.id, player);
@@ -720,6 +738,13 @@ function autoDraw(SocketID) {
                 // After drawing reset their Uno status
                 player.HasCalledUno = false;
                 io.to(SocketID).emit('notCalledUnoMe');
+                // Charge the draw time to this player's turn
+                if (turnStartTime !== null) {
+                    const elapsed = (Date.now() - turnStartTime) / 1000;
+                    player.HandTurnTime += elapsed;
+                    player.MatchTurnTime += elapsed;
+                    turnStartTime = null;
+                }
                 resolve();
             }
         };
@@ -771,6 +796,7 @@ function getPoints(players, winner) {
                 points: pts 
             });
             pointsThisHand += pts;
+            player.PointsGivenUp += pts;
         }
     });
 
@@ -783,10 +809,22 @@ function getPoints(players, winner) {
         .map(p => ({ name: p.Name, points: p.Points }))
         .sort((a, b) => b.points - a.points);
 
+    const playerStats = Array.from(players.values()).map(p => ({
+        name: p.Name,
+        handCardsPlayed: p.HandCardsPlayed,
+        matchCardsPlayed: p.MatchCardsPlayed,
+        handTurnTime: Math.round(p.HandTurnTime),
+        matchTurnTime: Math.round(p.MatchTurnTime),
+        pointsScored: p.Points,
+        pointsGivenUp: p.PointsGivenUp,
+        netPoints: p.Points - p.PointsGivenUp
+    }));
+
     return { 
         pointsThisHand, 
         breakdown,
-        standings 
+        standings,
+        playerStats
     };
 }
 
@@ -849,6 +887,7 @@ async function nextTurn(skipAutoDraw = false) {
     requiredPlay = new Array();
     io.to(currentPlayer).emit('requiredPlay', requiredPlay);
     io.emit('turnChange', currentPlayerID);
+    turnStartTime = Date.now();
 }
 
 // Check if a player can play a card, excluding some invalidCards
@@ -909,6 +948,8 @@ async function startGame() {
         player.LastUnoMeTime = 0;
         player.LastUnoYouTime = 0;
         player.WaitingForColorChoice = false;
+        player.HandCardsPlayed = 0;
+        player.HandTurnTime = 0;
         if(player.PlayerID == currentPlayerID) {
             currentPlayer = player.SocketID;
         }
@@ -930,4 +971,5 @@ async function startGame() {
     
     // Mark the first player as active
     io.emit('turnChange', currentPlayerID);
+    turnStartTime = Date.now();
 }

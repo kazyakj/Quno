@@ -468,10 +468,11 @@ hr {
 
 #handSummaryModal .modal-content {
     background: white;
-    padding: 20px;
+    padding: 28px;
     border-radius: 10px;
-    width: 350px;
-    max-height: 80vh;
+    width: 700px;
+    max-width: 95vw;
+    max-height: 85vh;
     overflow-y: auto;
     text-align: left;
     display: flex;

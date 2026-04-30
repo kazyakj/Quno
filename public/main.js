@@ -906,37 +906,135 @@ socket.on('handSummary', function(summary) {
     const modal = document.getElementById('handSummaryModal');
     const content = document.getElementById('handSummaryContent');
 
-    let html = `
-        <h2>Hand Summary</h2>
-        <p><strong>Winner: </strong>${summary.winner}</p>
-        <p><strong>Points this hand: </strong>${summary.pointsThisHand}</p>
-        <p><strong>Hand duration: </strong>${formatDuration(summary.handDuration)}</p>
-        <p><strong>Cards played: </strong>${summary.handCardsPlayed}</p>
-        <hr>
-        <h3>Points Earned From:</h3>
-        <ul>
-    `;
+    const ps = summary.playerStats || [];
 
-    summary.breakdown.forEach(b => {
-        html += `<li>${b.name}: ${b.points}</li>`;
-    });
+    // Build per-player turn time rows for hand
+    const handTurnRows = ps.map(p =>
+        `<tr>
+            <td style="padding:6px 8px;font-size:14px;">${p.name}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.handCardsPlayed}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${formatDuration(p.handTurnTime)}</td>
+        </tr>`
+    ).join('');
 
-    html += `
-        </ul><hr>
-        <h2>Match Stats</h2>
-        <h3>Standings:</h3>
-        <ol>
-    `;
+    // Build per-player standings rows for match
+    const standingRows = ps
+        .slice()
+        .sort((a, b) => b.pointsScored - a.pointsScored)
+        .map(p => {
+            const netColor = p.netPoints >= 0 ? 'color:#2a7a2a;font-weight:600;' : 'color:#b33;font-weight:600;';
+            const netStr = (p.netPoints >= 0 ? '+' : '') + p.netPoints;
+            return `<tr>
+                <td style="padding:6px 8px;font-size:14px;font-weight:600;">${p.name}</td>
+                <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.pointsScored}</td>
+                <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.pointsGivenUp}</td>
+                <td style="text-align:right;padding:6px 8px;font-size:14px;${netColor}">${netStr}</td>
+            </tr>`;
+        }).join('');
 
-    summary.standings.forEach(s => {
-        html += `<li>${s.name}: ${s.points}</li>`;
-    });
+    // Build per-player match turn time rows
+    const matchTurnRows = ps.map(p =>
+        `<tr>
+            <td style="padding:6px 8px;font-size:14px;">${p.name}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.matchCardsPlayed}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${formatDuration(p.matchTurnTime)}</td>
+        </tr>`
+    ).join('');
 
-    html += `
-        </ol><hr>
-        <p><strong>Match duration: </strong>${formatDuration(summary.matchDuration)}</p>
-        <p><strong>Hands played: </strong>${summary.handsPlayed}</p>
-        <p><strong>Cards played: </strong>${summary.matchCardsPlayed.toLocaleString()}</p>
+    const thStyle = 'text-align:left;padding:7px 8px;font-size:13px;color:#555;font-weight:600;border-bottom:2px solid #ddd;';
+    const thRight = 'text-align:right;padding:7px 8px;font-size:13px;color:#555;font-weight:600;border-bottom:2px solid #ddd;';
+    const tdStyle = 'padding:6px 8px;font-size:14px;';
+    const tdRight = 'text-align:right;padding:6px 8px;font-size:14px;';
+
+    const html = `
+        <h2 style="text-align:center;font-size:20px;font-weight:700;margin:0 0 18px;">Hand summary</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+            <!-- LEFT: HAND STATS -->
+            <div>
+                <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#777;margin:0 0 12px;">This hand</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Winner</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.winner}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Points scored</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.pointsThisHand}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Duration</div>
+                        <div style="font-size:15px;font-weight:700;">${formatDuration(summary.handDuration)}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cards played</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.handCardsPlayed}</div>
+                    </div>
+                </div>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Points given up</p>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Points</th>
+                    </tr></thead>
+                    <tbody>
+                        ${summary.breakdown.map(b => `<tr><td style="${tdStyle}">${b.name}</td><td style="${tdRight}">${b.points}</td></tr>`).join('')}
+                        <tr><td style="padding:6px 8px;font-size:14px;color:transparent;">—</td><td></td></tr>
+                    </tbody>
+                </table>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Time spent playing (this hand)</p>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Cards Played</th>
+                        <th style="${thRight}">Time Taken</th>
+                    </tr></thead>
+                    <tbody>${handTurnRows}</tbody>
+                </table>
+            </div>
+
+            <!-- RIGHT: MATCH STATS -->
+            <div style="border-left:1px solid #e0e0e0;padding-left:20px;">
+                <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#777;margin:0 0 12px;">Match so far</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Duration</div>
+                        <div style="font-size:15px;font-weight:700;">${formatDuration(summary.matchDuration)}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Hands played</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.handsPlayed}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;grid-column:1/-1;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cards played</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.matchCardsPlayed.toLocaleString()}</div>
+                    </div>
+                </div>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Standings</p>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Scored</th>
+                        <th style="${thRight}">Given up</th>
+                        <th style="${thRight}">Net</th>
+                    </tr></thead>
+                    <tbody>${standingRows}</tbody>
+                </table>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Time spent playing (match total)</p>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Cards Played</th>
+                        <th style="${thRight}">Time Taken</th>
+                    </tr></thead>
+                    <tbody>${matchTurnRows}</tbody>
+                </table>
+            </div>
+        </div>
     `;
 
     content.innerHTML = html;
