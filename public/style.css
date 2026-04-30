@@ -239,10 +239,13 @@ main #status {
 
 #color-bar {
     width: var(--card-width);
-    height: 20px;
+    height: 26px;
     background: rgb(184, 184, 184);
-    padding-bottom: 10px;
+    padding-bottom: 0;
     transform: translate(0, -50%);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
 }
 
 main .player .hand {
@@ -264,18 +267,34 @@ main .player .hand {
 
 #btnYellow {
     background-color: #FFAA01;
+    border: 3px solid #b87800 !important;
 }
 
 #btnGreen {
     background-color: #55AA55;
+    border: 3px solid #2d7a2d !important;
+    background-image: radial-gradient(circle, rgba(255,255,255,0.6) 3px, transparent 3px);
+    background-size: 9px 9px;
 }
 
 #btnBlue {
     background-color: #5455FF;
+    border: 3px solid #2020cc !important;
+    background-image: repeating-linear-gradient(
+        -45deg,
+        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.45) 3px,
+        transparent 3px, transparent 8px
+    );
 }
 
 #btnRed {
     background-color: #FF5555;
+    border: 3px solid #cc1111 !important;
+    background-image: repeating-linear-gradient(
+        0deg,
+        rgba(255,255,255,0.2) 0px, rgba(255,255,255,0.45) 3px,
+        transparent 3px, transparent 8px
+    );
 }
 
 #uno-buttons {
@@ -449,10 +468,11 @@ hr {
 
 #handSummaryModal .modal-content {
     background: white;
-    padding: 20px;
+    padding: 28px;
     border-radius: 10px;
-    width: 350px;
-    max-height: 80vh;
+    width: 700px;
+    max-width: 95vw;
+    max-height: 85vh;
     overflow-y: auto;
     text-align: left;
     display: flex;

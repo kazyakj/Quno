@@ -90,7 +90,7 @@ socket.on('rejoinState', function(state) {
         cardObj.id = 'discard';
         let discard = document.getElementById('discard');
         discard.parentNode.replaceChild(cardObj, discard);
-        document.getElementById('color-bar').style.background = state.currentColor || 'rgb(184, 184, 184)';
+        updateColorBar(state.currentColor || null);
     }
 
     if (state.currentPlayerId >= 0) {
@@ -237,12 +237,12 @@ socket.on('chooseColor', function() {
 // Display which color was selected after a wild is played
 socket.on('colorChosen', function(color) {
     currentColor = color;
-    document.getElementById('color-bar').style.background=color;
+    updateColorBar(color);
 });
 
 // Hide the color bar after move past a wild
 socket.on('hideColor', function() {
-    document.getElementById('color-bar').style.background="rgb(184, 184, 184)";
+    updateColorBar(null);
 });
 
 // Update the list of allowable plays for the player
@@ -356,6 +356,21 @@ socket.on('renderCard', function(card, player) {
     }
 });
 
+// Render a face-down card in an opponent's hand
+socket.on('renderOpponentCard', function(playerID) {
+    if (playerID == playerId) return;
+    
+    const hand = document.getElementById('hand_' + playerID);
+    if (!hand) return;
+
+    // Build a blank opponent card object just to get the card-back rendered
+    const cardObj = getCardUI({}, { SocketID: null });
+    hand.appendChild(cardObj);
+
+    // repositionCards expects a player object with SocketID and PlayerID
+    repositionCards({ SocketID: null, PlayerID: playerID });
+});
+
 socket.on('drawStart', function() {
     isDrawing = true;
     const hand = document.getElementById('hand_' + playerId);
@@ -398,23 +413,122 @@ socket.on('logMessage', function(message) {
     messageContainer.insertBefore(messageElement, messageContainer.firstChild);
 });
 
+// Returns an SVG pattern overlay element for a given card color
+function getColorPatternSVG(color) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+    svg.setAttribute("width", "100%");
+    svg.setAttribute("height", "100%");
+    svg.style.cssText = 'position:absolute;top:0;left:0;pointer-events:none;border-radius:13px;overflow:hidden;';
+
+    const defs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+    const patternEl = document.createElementNS("http://www.w3.org/2000/svg", "pattern");
+    const patternId = 'cbp_' + color + '_' + Math.random().toString(36).substr(2, 7);
+    patternEl.setAttribute("id", patternId);
+    patternEl.setAttribute("patternUnits", "userSpaceOnUse");
+
+    const patternColor = 'rgba(255,255,255,0.45)';
+
+    if (color === 'red') {
+        // Horizontal stripes
+        patternEl.setAttribute("width", "9");
+        patternEl.setAttribute("height", "9");
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", "0"); line.setAttribute("y1", "5");
+        line.setAttribute("x2", "9"); line.setAttribute("y2", "5");
+        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "5");
+        patternEl.appendChild(line);
+    } else if (color === 'green') {
+        // Dots
+        patternEl.setAttribute("width", "9");
+        patternEl.setAttribute("height", "9");
+        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        circle.setAttribute("cx", "6"); circle.setAttribute("cy", "6"); circle.setAttribute("r", "4");
+        circle.setAttribute("fill", patternColor);
+        patternEl.appendChild(circle);
+    } else if (color === 'blue') {
+        // Diagonal lines
+        patternEl.setAttribute("width", "12");
+        patternEl.setAttribute("height", "12");
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", "0"); line.setAttribute("y1", "12");
+        line.setAttribute("x2", "12"); line.setAttribute("y2", "0");
+        line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "3");
+        patternEl.appendChild(line);
+    } else {
+        return null; // No pattern for black cards
+    }
+
+    defs.appendChild(patternEl);
+    svg.appendChild(defs);
+
+    const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+    rect.setAttribute("width", "100%");
+    rect.setAttribute("height", "100%");
+    rect.setAttribute("fill", `url(#${patternId})`);
+    svg.appendChild(rect);
+
+    return svg;
+}
+
+// Apply pattern + text label to the color bar
+function updateColorBar(color) {
+    const bar = document.getElementById('color-bar');
+    if (!color || color === 'rgb(184, 184, 184)') {
+        bar.style.background = 'rgb(184, 184, 184)';
+        bar.innerHTML = '';
+        return;
+    }
+
+    const colorNames = { red: 'Red', green: 'Green', blue: 'Blue', yellow: 'Yellow' };
+    const label = colorNames[color] || color;
+    const textColor = (color === 'yellow') ? '#5a3a00' : 'white';
+
+    bar.style.background = color;
+    bar.style.position = 'relative';
+    bar.style.display = 'flex';
+    bar.style.alignItems = 'center';
+    bar.style.justifyContent = 'center';
+
+    // Clear old content and rebuild
+    bar.innerHTML = '';
+
+    const svgOverlay = getColorPatternSVG(color);
+    if (svgOverlay) {
+        svgOverlay.style.borderRadius = '0';
+        bar.appendChild(svgOverlay);
+    }
+
+    const span = document.createElement('span');
+    span.textContent = label;
+    span.style.cssText = `position:relative;z-index:1;font-size:11px;font-weight:bold;color:${textColor};letter-spacing:0.05em;`;
+    bar.appendChild(span);
+}
+
 // Create the UI element for a card
 function getCardUI(card, player) {
     let cardObj = document.createElement('div');
-
     cardObj.className = 'card';
-    cardObj.id = 'card_' + card.ID;
-    cardObj.setAttribute('dataCardColor', card.Color);
-    cardObj.setAttribute('dataCardType', card.Type);
+
+    const isMyCard = (player == null || player.SocketID == socketId);
     
     // Discard pile or the player
-    if(player == null || player.SocketID == socketId) {
+    if(isMyCard) {
+        // Only set revealing attributes on your own cards / discard
+        cardObj.id = 'card_' + card.ID;
+        cardObj.setAttribute('dataCardColor', card.Color);
+        cardObj.setAttribute('dataCardType', card.Type);
 
         // Get card image from sprite sheet
         const offsetX = 2 + 1680 - cdWidth * (card.ID % 14);
         const offsetY = 1440 - cdHeight * Math.floor(card.ID / 14);
         cardObj.style.backgroundImage = 'url(' + cards.src + ')';
         cardObj.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
+
+        // Inject colorblind pattern overlay
+        cardObj.style.position = 'relative';
+        const patternOverlay = getColorPatternSVG(card.Color);
+        if (patternOverlay) cardObj.appendChild(patternOverlay);
 
         if(player != null) {
             // Make the card clickable if it's for the player
@@ -543,7 +657,8 @@ socket.on('discardCard', function(card, player) {
 
     // Ignore the initial discard after a new deal and only handle player discards
     if(player != null) {
-        document.getElementById('card_' + card.ID).remove();
+        const playedCardEl = document.getElementById('card_' + card.ID);
+        if (playedCardEl) playedCardEl.remove();
         repositionCards(player);
     }
 
@@ -791,37 +906,135 @@ socket.on('handSummary', function(summary) {
     const modal = document.getElementById('handSummaryModal');
     const content = document.getElementById('handSummaryContent');
 
-    let html = `
-        <h2>Hand Summary</h2>
-        <p><strong>Winner: </strong>${summary.winner}</p>
-        <p><strong>Points this hand: </strong>${summary.pointsThisHand}</p>
-        <p><strong>Hand duration: </strong>${formatDuration(summary.handDuration)}</p>
-        <p><strong>Cards played: </strong>${summary.handCardsPlayed}</p>
-        <hr>
-        <h3>Points Earned From:</h3>
-        <ul>
-    `;
+    const ps = summary.playerStats || [];
 
-    summary.breakdown.forEach(b => {
-        html += `<li>${b.name}: ${b.points}</li>`;
-    });
+    // Build per-player turn time rows for hand
+    const handTurnRows = ps.map(p =>
+        `<tr>
+            <td style="padding:6px 8px;font-size:14px;">${p.name}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.handCardsPlayed}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${formatDuration(p.handTurnTime)}</td>
+        </tr>`
+    ).join('');
 
-    html += `
-        </ul><hr>
-        <h2>Match Stats</h2>
-        <h3>Standings:</h3>
-        <ol>
-    `;
+    // Build per-player standings rows for match
+    const standingRows = ps
+        .slice()
+        .sort((a, b) => b.pointsScored - a.pointsScored)
+        .map(p => {
+            const netColor = p.netPoints >= 0 ? 'color:#2a7a2a;font-weight:600;' : 'color:#b33;font-weight:600;';
+            const netStr = (p.netPoints >= 0 ? '+' : '') + p.netPoints;
+            return `<tr>
+                <td style="padding:6px 8px;font-size:14px;font-weight:600;">${p.name}</td>
+                <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.pointsScored}</td>
+                <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.pointsGivenUp}</td>
+                <td style="text-align:right;padding:6px 8px;font-size:14px;${netColor}">${netStr}</td>
+            </tr>`;
+        }).join('');
 
-    summary.standings.forEach(s => {
-        html += `<li>${s.name}: ${s.points}</li>`;
-    });
+    // Build per-player match turn time rows
+    const matchTurnRows = ps.map(p =>
+        `<tr>
+            <td style="padding:6px 8px;font-size:14px;">${p.name}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.matchCardsPlayed}</td>
+            <td style="text-align:right;padding:6px 8px;font-size:14px;">${formatDuration(p.matchTurnTime)}</td>
+        </tr>`
+    ).join('');
 
-    html += `
-        </ol><hr>
-        <p><strong>Match duration: </strong>${formatDuration(summary.matchDuration)}</p>
-        <p><strong>Hands played: </strong>${summary.handsPlayed}</p>
-        <p><strong>Cards played: </strong>${summary.matchCardsPlayed.toLocaleString()}</p>
+    const thStyle = 'text-align:left;padding:7px 8px;font-size:13px;color:#555;font-weight:600;border-bottom:2px solid #ddd;';
+    const thRight = 'text-align:right;padding:7px 8px;font-size:13px;color:#555;font-weight:600;border-bottom:2px solid #ddd;';
+    const tdStyle = 'padding:6px 8px;font-size:14px;';
+    const tdRight = 'text-align:right;padding:6px 8px;font-size:14px;';
+
+    const html = `
+        <h2 style="text-align:center;font-size:20px;font-weight:700;margin:0 0 18px;">Hand summary</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+
+            <!-- LEFT: HAND STATS -->
+            <div>
+                <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#777;margin:0 0 12px;">This hand</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Winner</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.winner}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Points scored</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.pointsThisHand}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Duration</div>
+                        <div style="font-size:15px;font-weight:700;">${formatDuration(summary.handDuration)}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cards played</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.handCardsPlayed}</div>
+                    </div>
+                </div>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Points given up</p>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Points</th>
+                    </tr></thead>
+                    <tbody>
+                        ${summary.breakdown.map(b => `<tr><td style="${tdStyle}">${b.name}</td><td style="${tdRight}">${b.points}</td></tr>`).join('')}
+                        <tr><td style="padding:6px 8px;font-size:14px;color:transparent;">—</td><td></td></tr>
+                    </tbody>
+                </table>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Time spent playing (this hand)</p>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Cards Played</th>
+                        <th style="${thRight}">Time Taken</th>
+                    </tr></thead>
+                    <tbody>${handTurnRows}</tbody>
+                </table>
+            </div>
+
+            <!-- RIGHT: MATCH STATS -->
+            <div style="border-left:1px solid #e0e0e0;padding-left:20px;">
+                <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#777;margin:0 0 12px;">Match so far</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Duration</div>
+                        <div style="font-size:15px;font-weight:700;">${formatDuration(summary.matchDuration)}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Hands played</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.handsPlayed}</div>
+                    </div>
+                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;grid-column:1/-1;">
+                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cards played</div>
+                        <div style="font-size:15px;font-weight:700;">${summary.matchCardsPlayed.toLocaleString()}</div>
+                    </div>
+                </div>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Standings</p>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Scored</th>
+                        <th style="${thRight}">Given up</th>
+                        <th style="${thRight}">Net</th>
+                    </tr></thead>
+                    <tbody>${standingRows}</tbody>
+                </table>
+
+                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Time spent playing (match total)</p>
+                <table style="width:100%;border-collapse:collapse;">
+                    <thead><tr>
+                        <th style="${thStyle}">Player</th>
+                        <th style="${thRight}">Cards Played</th>
+                        <th style="${thRight}">Time Taken</th>
+                    </tr></thead>
+                    <tbody>${matchTurnRows}</tbody>
+                </table>
+            </div>
+        </div>
     `;
 
     content.innerHTML = html;
