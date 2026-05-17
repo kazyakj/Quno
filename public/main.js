@@ -342,21 +342,26 @@ socket.on('gameOver', function(playerName) {
 // Render a card in a player's hand
 socket.on('renderCard', function(card, player) {
     let hand = document.getElementById('hand_' + player.PlayerID);
-    let cardObj = getCardUI(card, player);
-    cardObj.classList.add('unplayable');
 
-    hand.appendChild(cardObj);
+    animateCardDraw(hand, true, () => {
+        let cardObj = getCardUI(card, player);
+        cardObj.classList.add('unplayable');
+        // Start invisible and fade in
+        cardObj.style.opacity = '0';
+        cardObj.style.transition = 'opacity 0.15s ease';
+        hand.appendChild(cardObj);
+        repositionCards(player);
+        requestAnimationFrame(() => requestAnimationFrame(() => { cardObj.style.opacity = '1'; }));
 
-    repositionCards(player);
-
-    if(!isDrawing && player.SocketID == socketId) {
-        const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
-        if (myTurn) {
-            const topCard = getTopCard();
-            const activeColor = currentColor || topCard.Color;
-            updatePlayableCards(topCard, activeColor);
+        if(!isDrawing && player.SocketID == socketId) {
+            const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
+            if (myTurn) {
+                const topCard = getTopCard();
+                const activeColor = currentColor || topCard.Color;
+                updatePlayableCards(topCard, activeColor);
+            }
         }
-    }
+    });
 });
 
 // Render a face-down card in an opponent's hand
@@ -366,12 +371,14 @@ socket.on('renderOpponentCard', function(playerID) {
     const hand = document.getElementById('hand_' + playerID);
     if (!hand) return;
 
-    // Build a blank opponent card object just to get the card-back rendered
-    const cardObj = getCardUI({}, { SocketID: null });
-    hand.appendChild(cardObj);
-
-    // repositionCards expects a player object with SocketID and PlayerID
-    repositionCards({ SocketID: null, PlayerID: playerID });
+    animateCardDraw(hand, false, () => {
+        const cardObj = getCardUI({}, { SocketID: null });
+        cardObj.style.opacity = '0';
+        cardObj.style.transition = 'opacity 0.15s ease';
+        hand.appendChild(cardObj);
+        repositionCards({ SocketID: null, PlayerID: playerID });
+        requestAnimationFrame(() => requestAnimationFrame(() => { cardObj.style.opacity = '1'; }));
+    });
 });
 
 // Remove one face-down card from an opponent's hand when they play a card
@@ -522,6 +529,115 @@ function updateColorBar(color) {
     bar.appendChild(span);
 }
 
+// Animate a card flying from a source element to the discard pile.
+// Fire-and-forget: all game state changes happen synchronously before calling
+// this; the animation is purely cosmetic and nothing waits on it.
+// srcRect must be captured BEFORE the source element is removed from the DOM.
+function animateCardPlay(sourceEl, srcRect) {
+    const discard = document.getElementById('discard');
+    if (!sourceEl || !srcRect || !discard) return;
+
+    const dstRect = discard.getBoundingClientRect();
+
+    // Clone at full logical size (cdWidth x cdHeight) and use transform: scale()
+    // to match the visual size. This keeps background-position identical to the
+    // original element throughout the flight — no sprite drift possible.
+    const flying = document.createElement('div');
+    flying.className = 'card';
+    flying.style.backgroundImage = sourceEl.style.backgroundImage;
+    flying.style.backgroundPosition = sourceEl.style.backgroundPosition;
+    flying.style.backgroundSize = sourceEl.style.backgroundSize || 'auto';
+    flying.style.position = 'fixed';
+    flying.style.width = cdWidth + 'px';
+    flying.style.height = cdHeight + 'px';
+    flying.style.borderRadius = '15px';
+    flying.style.pointerEvents = 'none';
+    flying.style.zIndex = '9999';
+    flying.style.margin = '0';
+    flying.style.boxShadow = '2px 6px 16px rgba(0,0,0,0.45)';
+    flying.style.transformOrigin = 'top left';
+    flying.style.transition = 'none';
+
+    const srcScale = srcRect.width / cdWidth;
+    const dstScale = dstRect.width / cdWidth;
+
+    const startX = srcRect.left + srcRect.width / 2 - (cdWidth * srcScale) / 2;
+    const startY = srcRect.top + srcRect.height / 2 - (cdHeight * srcScale) / 2;
+    const endX   = dstRect.left + dstRect.width / 2 - (cdWidth * dstScale) / 2;
+    const endY   = dstRect.top + dstRect.height / 2 - (cdHeight * dstScale) / 2;
+
+    flying.style.left = startX + 'px';
+    flying.style.top  = startY + 'px';
+    flying.style.transform = `scale(${srcScale})`;
+    document.body.appendChild(flying);
+
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            flying.style.transition = 'left 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94), ' +
+                                      'top 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94), ' +
+                                      'transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94)';
+            flying.style.left = endX + 'px';
+            flying.style.top  = endY + 'px';
+            flying.style.transform = `scale(${dstScale})`;
+        });
+    });
+
+    flying.addEventListener('transitionend', function handler(e) {
+        if (e.propertyName !== 'top') return;
+        flying.removeEventListener('transitionend', handler);
+        flying.remove();
+    });
+}
+
+// Animate a card flying from the draw pile to a target hand element
+function animateCardDraw(targetHandEl, isOwn, onComplete) {
+    const pile = document.querySelector('.playArea1 .pile');
+    if (!pile) { onComplete(); return; }
+
+    const pileRect = pile.getBoundingClientRect();
+    const handRect = targetHandEl.getBoundingClientRect();
+
+    // Create a flying card clone (always shows card back)
+    const flying = document.createElement('div');
+    flying.style.cssText = `
+        position: fixed;
+        width: ${cdWidth * 0.6}px;
+        height: ${cdHeight * 0.6}px;
+        border-radius: 9px;
+        background-image: url(${back.src});
+        background-size: 100%;
+        pointer-events: none;
+        z-index: 9999;
+        left: ${pileRect.left + pileRect.width / 2 - (cdWidth * 0.6) / 2}px;
+        top: ${pileRect.top + pileRect.height / 2 - (cdHeight * 0.6) / 2}px;
+        transition: left 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                    top 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+                    opacity 0.1s ease 0.22s;
+        box-shadow: 2px 4px 12px rgba(0,0,0,0.4);
+    `;
+    document.body.appendChild(flying);
+
+    // Destination: center of the target hand
+    const destX = handRect.left + handRect.width / 2 - (cdWidth * 0.6) / 2;
+    const destY = handRect.top + handRect.height / 2 - (cdHeight * 0.6) / 2;
+
+    // Trigger animation on next frame
+    requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+            flying.style.left = destX + 'px';
+            flying.style.top = destY + 'px';
+            flying.style.opacity = '0';
+        });
+    });
+
+    flying.addEventListener('transitionend', function handler(e) {
+        if (e.propertyName !== 'top') return;
+        flying.removeEventListener('transitionend', handler);
+        flying.remove();
+        onComplete();
+    });
+}
+
 // Create the UI element for a card
 function getCardUI(card, player) {
     let cardObj = document.createElement('div');
@@ -665,19 +781,44 @@ function playCard(card, player) {
 socket.on('discardCard', function(card, player) {
     currentColor = card.Color;
 
-    // Add a card to the discard pile
     let cardObj = getCardUI(card);
     cardObj.id = 'discard';
 
-    // Ignore the initial discard after a new deal and only handle player discards
-    if(player != null) {
-        const playedCardEl = document.getElementById('card_' + card.ID);
-        if (playedCardEl) playedCardEl.remove();
-        repositionCards(player);
+    // Initial deal — no animation, just swap immediately
+    if (player == null) {
+        let discard = document.getElementById('discard');
+        discard.parentNode.replaceChild(cardObj, discard);
+        return;
     }
 
-    let discard = document.getElementById('discard');
-    discard.parentNode.replaceChild(cardObj, discard);
+    const isMyCard = player.SocketID === socketId;
+
+    if (isMyCard) {
+        // Snapshot rect while element is still in the DOM, then do all state
+        // changes synchronously so turnChange/updatePlayableCards see correct state.
+        const sourceEl = document.getElementById('card_' + card.ID);
+        const srcRect = sourceEl ? sourceEl.getBoundingClientRect() : null;
+        if (sourceEl) sourceEl.remove();
+        repositionCards(player);
+
+        // Swap the discard immediately — turnChange reads getTopCard() from this
+        let discard = document.getElementById('discard');
+        discard.parentNode.replaceChild(cardObj, discard);
+
+        // Animation is purely cosmetic, fires after all state is already correct
+        animateCardPlay(sourceEl, srcRect);
+    } else {
+        // Opponent: removeOpponentCard handles DOM removal and repositionCards.
+        // Snapshot for animation before it's removed.
+        const hand = document.getElementById('hand_' + player.PlayerID);
+        const sourceEl = hand ? hand.lastElementChild : null;
+        const srcRect = sourceEl ? sourceEl.getBoundingClientRect() : null;
+
+        let discard = document.getElementById('discard');
+        discard.parentNode.replaceChild(cardObj, discard);
+
+        animateCardPlay(sourceEl, srcRect);
+    }
 });
 
 // Play sound when a card is drawn
