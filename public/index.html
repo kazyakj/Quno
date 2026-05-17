@@ -75,7 +75,7 @@
                     <input type="button" id="btnUnoYou" class="btn" value="Call Uno On Another" onclick="unoYou()">
                 </div>
                 
-                <div id="waitingOverlay">Waiting for the host to start the game</div>
+                <div id="waitingOverlay" class="overlay">Waiting for the host to start the game</div>
             </main>
         </div>
 
@@ -95,7 +95,7 @@
             </div>
         </div>
 
-        <div id="handSummaryModal" class="modal">
+        <div id="handSummaryModal" class="overlay">
             <div class="modal-content">
                 <div id="handSummaryContent"></div>
                 <button class="btn" onclick="closeHandSummary()">Close</button>
@@ -104,17 +104,5 @@
 
         <script type="text/javascript" src="/socket.io/socket.io.js"></script>
         <script type="text/javascript" src="/main.js"></script>
-
-        <script>
-            const masterCheckbox = document.getElementById('masterCheckbox');
-            const controlledCheckboxes = document.querySelectorAll('.controlledCheckbox');
-            
-            masterCheckbox.addEventListener('click', () => {
-                const isChecked = masterCheckbox.checked;
-                controlledCheckboxes.forEach(checkbox => {
-                    checkbox.checked = isChecked;
-                });
-            });
-        </script>
     </body>
 </html>

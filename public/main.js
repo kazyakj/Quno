@@ -21,6 +21,43 @@ let isDrawing = false;
 const sidePanel = document.getElementById('side-panel');
 const collapseButton = document.getElementById('collapse-btn');
 
+// --- UI Helpers ---
+
+function show(id, displayType = 'block') {
+    document.getElementById(id).style.display = displayType;
+}
+
+function hide(id) {
+    document.getElementById(id).style.display = 'none';
+}
+
+function renderPlayerList(lobbyPlayers, hostName) {
+    const playerListDiv = document.getElementById('playerList');
+    playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
+
+    lobbyPlayers.forEach(name => {
+        const span = document.createElement('span');
+        span.style.marginRight = '10px';
+        const isHost = (name === hostName);
+        span.innerHTML = isHost ? `<span class="crown">👑</span>${name}` : name;
+
+        if (isPlayerA) {
+            if (name === playerName) {
+                span.title = 'You (Host)';
+                span.style.cursor = 'default';
+            } else {
+                span.style.cursor = 'pointer';
+                span.title = 'Click to boot player';
+                span.addEventListener('click', () => showBootModal(name));
+            }
+        } else {
+            span.title = isHost ? 'Host' : '';
+        }
+
+        playerListDiv.appendChild(span);
+    });
+}
+
 collapseButton.addEventListener('click', () => {
     sidePanel.classList.toggle('collapsed');
 });
@@ -46,17 +83,17 @@ socket.on('rejoinState', function(state) {
         }
     }
 
-    document.getElementById('waitingOverlay').style.display = 'none';
-    document.getElementById('status').style.display = 'none';
-    document.getElementById('uno-buttons').style.display = 'flex';
-    document.getElementById('discard').style.display = 'inline-block';
-    document.getElementById('color-buttons').style.display = 'none';
+    hide('waitingOverlay');
+    hide('status');
+    show('uno-buttons', 'flex');
+    show('discard', 'inline-block');
+    hide('color-buttons');
 
     if (isPlayerA) {
-        document.getElementById('btnStart').style.display="inline-block";
-        document.getElementById('btnOptions').style.display="inline-block";
+        show('btnStart', 'inline-block');
+        show('btnOptions', 'inline-block');
         if (state.gameIsOver) {
-            document.getElementById('btnDeal').style.display="inline-block";
+            show('btnDeal', 'inline-block');
         }
     }
 
@@ -64,15 +101,7 @@ socket.on('rejoinState', function(state) {
 
     // Update the player list header at the top
     playersInLobby = state.playersInLobby;
-    const playerListDiv = document.getElementById('playerList');
-    playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
-    state.playersInLobby.forEach(name => {
-        const span = document.createElement('span');
-        span.style.marginRight = '10px';
-        const isHost = (name === state.hostName);
-        span.innerHTML = isHost ? `<span class="crown">👑</span>${name}` : name;
-        playerListDiv.appendChild(span);
-    });
+    renderPlayerList(state.playersInLobby, state.hostName);
 
     for (let player of state.playerList) {
         for (let card of player.Hand) {
@@ -113,11 +142,15 @@ socket.on('setHost', function(name) {
 });
 
 // Show game controls to the host
-socket.on('isPlayerA', function() {
+socket.on('isPlayerA', function(data) {
     isPlayerA = true;
-    document.getElementById('btnStart').style.display="inline-block";
-    document.getElementById('btnOptions').style.display="inline-block";
-
+    hide('waitingOverlay');
+    show('btnStart', 'inline-block');
+    show('btnOptions', 'inline-block');
+    // If we were promoted mid-game and the hand is already over, also show Deal
+    if (data && data.gameInProgress === false && gameInProgress === false) {
+        show('btnDeal', 'inline-block');
+    }
     updateStartButtonState();
 });
 
@@ -140,29 +173,47 @@ function updateStartButtonState() {
 // Update game options
 socket.on('updateOptions', function(options) {
     window.playWildDraw4Enabled = options.playWildDraw4;
+
+    // Sync all checkboxes to the current server-side option state
+    const optionMap = {
+        playWildDraw4: 'playWildDraw4',
+        stackDraw2:    'stackDraw2',
+        skipDraw2:     'skipDraw2',
+        reverseDraw2:  'reverseDraw2',
+        stackDraw4:    'stackDraw4',
+        skipDraw4:     'skipDraw4',
+        reverseDraw4:  'reverseDraw4',
+    };
+    for (const [key, name] of Object.entries(optionMap)) {
+        const cb = document.querySelector(`input[name="${name}"]`);
+        if (cb) cb.checked = !!options[key];
+    }
+    // Sync the Matt Mode master checkbox: checked only if all sub-options are on
+    const controlled = document.querySelectorAll('.controlledCheckbox');
+    const master = document.getElementById('masterCheckbox');
+    if (master && controlled.length) {
+        master.checked = Array.from(controlled).every(cb => cb.checked);
+    }
 });
 
 // Start the game
 socket.on('gameStarted', function(playerList) {
     players = playerList.length;
-    document.getElementById('waitingOverlay').style.display="none";
+    hide('waitingOverlay');
     gameInProgress = true;
 
     playSound('audio/game-start.wav', 0.2);
 
     // Show/hide elements for in-game state
-    document.getElementById("status").style.display="none";
-    document.getElementById('btnDeal').style.display="none";
-    document.getElementById('uno-buttons').style.display="flex";
-    document.getElementById('discard').style.display="inline-block";
-    document.getElementById('color-buttons').style.display="none";
+    hide('status');
+    hide('btnDeal');
+    show('uno-buttons', 'flex');
+    show('discard', 'inline-block');
+    hide('color-buttons');
 
     // Get this player's ID
-    for(let i = 0; i < players; i++) {
-        if(playerList[i].SocketID == socketId) {
-            playerId = playerList[i].PlayerID;
-        }
-    }
+    const self = playerList.find(p => p.SocketID === socketId);
+    if (self) playerId = self.PlayerID;
 
     // Display players
     createPlayersUI(playerList);
@@ -189,34 +240,10 @@ socket.on('playerLeft', function({ playerId: leftPlayerId }) {
 // Update the player list when a new player joins
 socket.on('newPlayer', function(data) {
     const {players: lobbyPlayers, host: hostName} = data;
-    const playerListDiv = document.getElementById('playerList');
-    playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
-    
-    lobbyPlayers.forEach(name => {
-        const span = document.createElement('span');
-        span.style.marginRight = '10px';
-
-        const isHost = (name === hostName);
-        const displayName = isHost ? `<span class="crown">👑</span>${name}` : name;
-        span.innerHTML = displayName;
-
-        if(isPlayerA) {
-            if (name === playerName) {
-                span.title = 'You (Host)';
-                span.style.cursor = 'default';
-            } else {
-                span.style.cursor = 'pointer';
-                span.title = 'Click to boot player';
-                span.addEventListener('click', () => showBootModal(name));
-            }
-        } else {
-            span.title = isHost ? 'Host' : '';
-        }
-
-        playerListDiv.appendChild(span);
-    });
 
     playersInLobby = lobbyPlayers;
+    renderPlayerList(lobbyPlayers, hostName);
+
     if (isPlayerA) {
         updateStartButtonState();
     } else {
@@ -226,7 +253,7 @@ socket.on('newPlayer', function(data) {
 
 // Display the buttons to let the player pick a color after a wild is played
 socket.on('chooseColor', function() {
-    document.getElementById('color-buttons').style.display="flex";
+    show('color-buttons', 'flex');
 
     const hand = document.getElementById('hand_' + playerId);
     if (hand) {
@@ -279,41 +306,18 @@ socket.on('turnChange', function(PlayerID) {
     }
 });
 
-// Handle Uno call on themself
-socket.on('calledUnoMe', function() {
-    const btn = document.getElementById('btnUnoMe');
+function setUnoButtonState(btnId, called) {
+    const btn = document.getElementById(btnId);
     if (btn) {
-        btn.disabled = true;
-        btn.style.background = 'gray';
+        btn.disabled = called;
+        btn.style.background = called ? 'gray' : '#222';
     }
-});
+}
 
-// Undo uno call on themself
-socket.on('notCalledUnoMe', function() {
-    const btn = document.getElementById('btnUnoMe');
-    if (btn) {
-        btn.disabled = false;
-        btn.style.background = '#222';
-    }
-});
-
-// Handle Uno call on another player
-socket.on('calledUnoYou', function() {
-    const btn = document.getElementById('btnUnoYou');
-    if (btn) {
-        btn.disabled = true;
-        btn.style.background = 'gray';
-    }
-});
-
-// Undo Uno call on another player
-socket.on('notCalledUnoYou', function() {
-    const btn = document.getElementById('btnUnoYou');
-    if (btn) {
-        btn.disabled = false;
-        btn.style.background = '#222';
-    }
-});
+socket.on('calledUnoMe',    () => setUnoButtonState('btnUnoMe', true));
+socket.on('notCalledUnoMe', () => setUnoButtonState('btnUnoMe', false));
+socket.on('calledUnoYou',   () => setUnoButtonState('btnUnoYou', true));
+socket.on('notCalledUnoYou',() => setUnoButtonState('btnUnoYou', false));
 
 // Update the points of the player who won the game
 socket.on('updateScore', function(player, points, handsWon) {
@@ -328,11 +332,10 @@ socket.on('gameOver', function(playerName) {
 
     // Display a winner message
     document.getElementById('status').innerHTML = playerName + ' WON';
-    document.getElementById("status").style.display="inline-block";
+    show('status', 'inline-block');
 
-    // Display the deal button to the player in control of the game
     if(isPlayerA) {
-        document.getElementById("btnDeal").style.display="inline-block";
+        show('btnDeal', 'inline-block');
     }
 });
 
@@ -368,6 +371,20 @@ socket.on('renderOpponentCard', function(playerID) {
     hand.appendChild(cardObj);
 
     // repositionCards expects a player object with SocketID and PlayerID
+    repositionCards({ SocketID: null, PlayerID: playerID });
+});
+
+// Remove one face-down card from an opponent's hand when they play a card
+socket.on('removeOpponentCard', function(playerID) {
+    if (playerID == playerId) return;
+
+    const hand = document.getElementById('hand_' + playerID);
+    if (!hand) return;
+
+    // Remove the last card-back (opponents' hands only contain card-backs)
+    const lastCard = hand.lastElementChild;
+    if (lastCard) lastCard.remove();
+
     repositionCards({ SocketID: null, PlayerID: playerID });
 });
 
@@ -570,14 +587,11 @@ function repositionCards(player) {
 
         hand.innerHTML = '';
 
-        let i = 0;
-        cards.forEach(card => {
+        cards.forEach((card, i) => {
             // As more cards as drawn, overlap them more
             let marginLeft = i === 0 ? '-20' : -5 * (cardCount - 1) + 5;
-            if(marginLeft < -59){marginLeft = -59;}
+            if(marginLeft < -59) marginLeft = -59;
             card.style.marginLeft = marginLeft + 'px';
-            i++;
-
             hand.appendChild(card);
         });
     } else {
@@ -671,28 +685,14 @@ socket.on('cardDrawn', function() {
     playSound('audio/draw-card.wav');
 });
 
-// Save a cookie with the player name
-function setCookie(name, value, seconds) {
-    let date = new Date();
-    date.setTime(date.getTime() + (seconds * 1000));
-    let expires = "expires=" + date.toUTCString();
-    document.cookie = name + "=" + value + ";" + expires + ";path=/";
+// Save the player name for next visit
+function savePlayerName(name) {
+    localStorage.setItem('playerName', name);
 }
 
-// Get the player name from a cookie if it exists
-function getCookie(name) {
-    name += "=";
-    let cookies = document.cookie.split(';');
-    for(let i = 0; i < cookies.length; i++) {
-        let cookie = cookies[i];
-        while(cookie.charAt(0) === ' ') {
-            cookie = cookie.substring(1);
-        }
-        if(cookie.indexOf(name) === 0) {
-            return cookie.substring(name.length, cookie.length);
-        }
-    }
-    return null;
+// Get the player name from local storage if it exists
+function getSavedPlayerName() {
+    return localStorage.getItem('playerName');
 }
 
 // Start a new match
@@ -707,7 +707,7 @@ function newHand() {
 
 // Set a new color after a color button has been clicked after a wild
 function setColor(color) {
-    document.getElementById('color-buttons').style.display="none";
+    hide('color-buttons');
     socket.emit('colorChosen', color);
 }
 
@@ -758,65 +758,36 @@ function createPlayersUI(players) {
                 player_location += 8;
             }
 
-            switch(player_location) {
-                case 1:
-                    player_location = 5;
-                    break;
-                case 2:
-                    player_location = 3;
-                    break;
-                case 3:
-                    player_location = 0;
-                    break;
-                case 4:
-                    player_location = 1;
-                    break;
-                case 5:
-                    player_location = 2;
-                    break;
-                case 6:
-                    player_location = 4;
-                    break;
-                case 7:
-                    player_location = 6;
-                    break;
-            }
+            const locationMap = [null, 5, 4, 3, 2, 1, 0, 6]; // Maps player_location to player div id
+            player_location = locationMap[player_location];
 
             document.getElementById('player' + player_location).appendChild(div_player);
         }
     }
 }
 
-// Call Uno for oneself
-function unoMe() {
-    const btn = document.getElementById('btnUnoMe');
-    if (btn) {
-        btn.disabled = true;
-        btn.style.background = 'gray';
-    }
-
-    socket.emit('unoMe');
+// Call Uno for oneself or another player
+function unoCall(type) {
+    setUnoButtonState('btnUno' + type, true);
+    socket.emit('uno' + type);
 }
 
-// Call Uno on another player
-function unoYou() {
-    const btn = document.getElementById('btnUnoYou');
-    if (btn) {
-        btn.disabled = true;
-        btn.style.background = 'gray';
-    }
-    
-    socket.emit('unoYou');
-}
+function unoMe() { unoCall('Me'); }
+function unoYou() { unoCall('You'); }
 
-// Show the game options
+// Toggle the game options panel
 function showOptions() {
-    document.getElementById('options').style.display = 'flex';
+    const options = document.getElementById('options');
+    if (options.style.display === 'flex') {
+        hide('options');
+    } else {
+        show('options', 'flex');
+    }
 }
 
 // Save the game options
 function saveOptions() {
-    document.getElementById('options').style.display = 'none';
+    hide('options');
     let checkboxes = document.querySelectorAll('#options input[type="checkbox"]:checked');
     let selectedValues = Array.from(checkboxes).map(checkbox => checkbox.value);
 
@@ -829,7 +800,7 @@ function init() {
     back.src = 'images/quno.png';
   
     // Get the player name
-    playerName = getCookie('playerName');
+    playerName = getSavedPlayerName();
     if(playerName == null) {
         // Default autogenerated name
         let defaultName = 'Player' + Math.floor(1000 + Math.random() * 9000);
@@ -840,8 +811,8 @@ function init() {
         if (playerName === null || playerName === "") {
             playerName = defaultName;
         } else {
-            // Save the name in a cookie
-            setCookie('playerName', playerName, 24 * 3600);
+            // Save the name for next time
+            savePlayerName(playerName);
         }
     }
 
@@ -908,113 +879,106 @@ socket.on('handSummary', function(summary) {
 
     const ps = summary.playerStats || [];
 
-    // Build per-player turn time rows for hand
-    const handTurnRows = ps.map(p =>
-        `<tr>
-            <td style="padding:6px 8px;font-size:14px;">${p.name}</td>
-            <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.handCardsPlayed}</td>
-            <td style="text-align:right;padding:6px 8px;font-size:14px;">${formatDuration(p.handTurnTime)}</td>
-        </tr>`
-    ).join('');
+    // Truncate long player names so they don't break table layout
+    const MAX_NAME = 14;
+    function truncate(name) {
+        return name.length > MAX_NAME ? name.slice(0, MAX_NAME - 1) + '...' : name;
+    }
+
+    const thBase  = 'padding:7px 10px;font-size:11px;color:#6b8a7a;font-weight:700;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid rgba(0,232,154,0.3);'; 
+    const thStyle = 'text-align:left;' + thBase;
+    const thRight = 'text-align:right;' + thBase;
+    const tdStyle = 'padding:6px 8px;font-size:14px;';
+    const tdRight = 'text-align:right;padding:6px 8px;font-size:14px;';
+
+    function buildTurnRows(cardsKey, timeKey) {
+        return ps.map(p =>
+            `<tr>
+                <td style="${tdStyle}">${truncate(p.name)}</td>
+                <td style="${tdRight}">${p[cardsKey]}</td>
+                <td style="${tdRight}">${formatDuration(p[timeKey])}</td>
+            </tr>`
+        ).join('');
+    }
+
+    // Build per-player turn time rows for hand and match
+    const handTurnRows = buildTurnRows('handCardsPlayed', 'handTurnTime');
+    const matchTurnRows = buildTurnRows('matchCardsPlayed', 'matchTurnTime');
 
     // Build per-player standings rows for match
     const standingRows = ps
         .slice()
-        .sort((a, b) => b.pointsScored - a.pointsScored)
+        .sort((a, b) => (b.pointsScored - a.pointsScored) || (b.netPoints - a.netPoints))
         .map(p => {
-            const netColor = p.netPoints >= 0 ? 'color:#2a7a2a;font-weight:600;' : 'color:#b33;font-weight:600;';
+            const netColor = p.netPoints >= 0 ? 'color:#3db87a;font-weight:600;' : 'color:#c94f5f;font-weight:600;';
             const netStr = (p.netPoints >= 0 ? '+' : '') + p.netPoints;
             return `<tr>
-                <td style="padding:6px 8px;font-size:14px;font-weight:600;">${p.name}</td>
-                <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.pointsScored}</td>
-                <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.pointsGivenUp}</td>
-                <td style="text-align:right;padding:6px 8px;font-size:14px;${netColor}">${netStr}</td>
+                <td style="${tdStyle}font-weight:600;">${truncate(p.name)}</td>
+                <td style="${tdRight}">${p.pointsScored}</td>
+                <td style="${tdRight}">${p.pointsGivenUp}</td>
+                <td style="${tdRight}${netColor}">${netStr}</td>
             </tr>`;
         }).join('');
 
-    // Build per-player match turn time rows
-    const matchTurnRows = ps.map(p =>
-        `<tr>
-            <td style="padding:6px 8px;font-size:14px;">${p.name}</td>
-            <td style="text-align:right;padding:6px 8px;font-size:14px;">${p.matchCardsPlayed}</td>
-            <td style="text-align:right;padding:6px 8px;font-size:14px;">${formatDuration(p.matchTurnTime)}</td>
-        </tr>`
-    ).join('');
+    const sc = 'padding:10px 0 10px;border-bottom:1px solid rgba(0,232,154,0.15);';
+    const slabel = 'font-size:11px;color:#6b8a7a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;';
+    const sval = 'font-size:1.15rem;font-weight:700';
 
-    const thStyle = 'text-align:left;padding:7px 8px;font-size:13px;color:#555;font-weight:600;border-bottom:2px solid #ddd;';
-    const thRight = 'text-align:right;padding:7px 8px;font-size:13px;color:#555;font-weight:600;border-bottom:2px solid #ddd;';
-    const tdStyle = 'padding:6px 8px;font-size:14px;';
-    const tdRight = 'text-align:right;padding:6px 8px;font-size:14px;';
+    const breakdownRows = summary.breakdown.length;
+    const standingsCount = ps.length;
+    const paddingRows = Math.max(0, standingsCount - breakdownRows);
+    const breakdownpadding = paddingRows > 0 
+        ? `<tr><td colspan="2" style="padding:${paddingRows * 33}px 0 0;"></td></tr>`
+        : '';
 
     const html = `
-        <h2 style="text-align:center;font-size:20px;font-weight:700;margin:0 0 18px;">Hand summary</h2>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+        <h2 style="margin:0 0 20px;text-align:center;">Hand Summary</h2>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:24px;">
 
             <!-- LEFT: HAND STATS -->
             <div>
-                <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#777;margin:0 0 12px;">This hand</p>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
-                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
-                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Winner</div>
-                        <div style="font-size:15px;font-weight:700;">${summary.winner}</div>
-                    </div>
-                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
-                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Points scored</div>
-                        <div style="font-size:15px;font-weight:700;">${summary.pointsThisHand}</div>
-                    </div>
-                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
-                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Duration</div>
-                        <div style="font-size:15px;font-weight:700;">${formatDuration(summary.handDuration)}</div>
-                    </div>
-                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
-                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cards played</div>
-                        <div style="font-size:15px;font-weight:700;">${summary.handCardsPlayed}</div>
-                    </div>
+                <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b8a7a;margin:0 0 12px;">This hand</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:20px;">
+                    <div style="${sc}padding-right:12px;"><div style="${slabel}">Winner</div><div style="${sval}color:#3db87a;">${truncate(summary.winner)}</div></div>
+                    <div style="${sc}padding-left:12px;"><div style="${slabel}">Points scored</div><div style="${sval}">${summary.pointsThisHand}</div></div>
+                    <div style="${sc}padding-right:12px;"><div style="${slabel}">Duration</div><div style="${sval}">${formatDuration(summary.handDuration)}</div></div>
+                    <div style="${sc}padding-left:12px;border-bottom:none;"><div style="${slabel}">Cards played</div><div style="${sval}">${summary.handCardsPlayed}</div></div>
                 </div>
 
-                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Points given up</p>
-                <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+                <p style="${slabel}margin:0 0 8px;">Points given up</p>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
                     <thead><tr>
                         <th style="${thStyle}">Player</th>
                         <th style="${thRight}">Points</th>
                     </tr></thead>
                     <tbody>
                         ${summary.breakdown.map(b => `<tr><td style="${tdStyle}">${b.name}</td><td style="${tdRight}">${b.points}</td></tr>`).join('')}
-                        <tr><td style="padding:6px 8px;font-size:14px;color:transparent;">—</td><td></td></tr>
+                        ${breakdownpadding}
                     </tbody>
                 </table>
 
-                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Time spent playing (this hand)</p>
+                <p style="${slabel}margin:0 0 8px;">Time spent (this hand)</p>
                 <table style="width:100%;border-collapse:collapse;">
                     <thead><tr>
                         <th style="${thStyle}">Player</th>
-                        <th style="${thRight}">Cards Played</th>
-                        <th style="${thRight}">Time Taken</th>
+                        <th style="${thRight}">Cards</th>
+                        <th style="${thRight}">Time</th>
                     </tr></thead>
                     <tbody>${handTurnRows}</tbody>
                 </table>
             </div>
 
             <!-- RIGHT: MATCH STATS -->
-            <div style="border-left:1px solid #e0e0e0;padding-left:20px;">
-                <p style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#777;margin:0 0 12px;">Match so far</p>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:18px;">
-                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
-                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Duration</div>
-                        <div style="font-size:15px;font-weight:700;">${formatDuration(summary.matchDuration)}</div>
-                    </div>
-                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;">
-                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Hands played</div>
-                        <div style="font-size:15px;font-weight:700;">${summary.handsPlayed}</div>
-                    </div>
-                    <div style="background:#f5f5f5;border-radius:8px;padding:12px 14px;grid-column:1/-1;">
-                        <div style="font-size:12px;color:#888;margin-bottom:4px;">Cards played</div>
-                        <div style="font-size:15px;font-weight:700;">${summary.matchCardsPlayed.toLocaleString()}</div>
-                    </div>
+            <div style="border-left:1px solid rgba(0,232,154,0.15);padding-left:24px;">
+                <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#6b8a7a;margin:0 0 12px;">Match so far</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:0;margin-bottom:20px;">
+                    <div style="${sc}padding-right:12px;"><div style="${slabel}">Duration</div><div style="${sval}">${formatDuration(summary.matchDuration)}</div></div>
+                    <div style="${sc}padding-left:12px;"><div style="${slabel}">Hands played</div><div style="${sval}">${summary.handsPlayed}</div></div>
+                    <div style="${sc}padding-right:12px;border-bottom:none;grid-column:1/-1;"><div style="${slabel}">Cards played</div><div style="${sval}">${summary.matchCardsPlayed.toLocaleString()}</div></div>
                 </div>
 
-                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Standings</p>
-                <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+                <p style="${slabel}margin:0 0 8px;">Standings</p>
+                <table style="width:100%;border-collapse:collapse;margin-bottom:18px;">
                     <thead><tr>
                         <th style="${thStyle}">Player</th>
                         <th style="${thRight}">Scored</th>
@@ -1024,12 +988,12 @@ socket.on('handSummary', function(summary) {
                     <tbody>${standingRows}</tbody>
                 </table>
 
-                <p style="font-size:12px;font-weight:700;color:#777;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;">Time spent playing (match total)</p>
+                <p style="${slabel}margin:0 0 8px;">Time spent (match total)</p>
                 <table style="width:100%;border-collapse:collapse;">
                     <thead><tr>
                         <th style="${thStyle}">Player</th>
-                        <th style="${thRight}">Cards Played</th>
-                        <th style="${thRight}">Time Taken</th>
+                        <th style="${thRight}">Cards</th>
+                        <th style="${thRight}">Time</th>
                     </tr></thead>
                     <tbody>${matchTurnRows}</tbody>
                 </table>
@@ -1063,5 +1027,12 @@ function closeHandSummary() {
     document.getElementById('handSummaryModal').style.display = 'none';
 }
 
+// Wire up the "Matt Mode" master checkbox to toggle all sub-options
+const masterCheckbox = document.getElementById('masterCheckbox');
+const controlledCheckboxes = document.querySelectorAll('.controlledCheckbox');
+masterCheckbox.addEventListener('click', () => {
+    const isChecked = masterCheckbox.checked;
+    controlledCheckboxes.forEach(checkbox => { checkbox.checked = isChecked; });
+});
 
 init();
