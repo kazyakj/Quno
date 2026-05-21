@@ -12,6 +12,13 @@
         <div class="game-content">
             <header>
                 <h1>Quno</h1>
+                <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle dark mode">
+                    <span class="theme-toggle-icon" id="themeIcon">☀️</span>
+                    <div class="theme-toggle-track">
+                        <div class="theme-toggle-thumb"></div>
+                    </div>
+                    <span id="themeLabel">Light</span>
+                </button>
             </header>
             <main>
                 <div class="game-options">
@@ -55,7 +62,6 @@
                     </div>
                     <div class="grid-item playArea2">
                         <div id="discard" class="card"></div>
-                        <div id="color-bar" class="color-bar"></div>
                     </div>
                     <div id="player4" class="grid-item playerOpponent"></div>
                     <div id="player5" class="grid-item playerOpponent"></div>
@@ -75,7 +81,7 @@
                     <input type="button" id="btnUnoYou" class="btn" value="Call Uno On Another" onclick="unoYou()">
                 </div>
                 
-                <div id="waitingOverlay">Waiting for the host to start the game</div>
+                <div id="waitingOverlay" class="overlay">Waiting for the host to start the game</div>
             </main>
         </div>
 
@@ -95,7 +101,7 @@
             </div>
         </div>
 
-        <div id="handSummaryModal" class="modal">
+        <div id="handSummaryModal" class="overlay">
             <div class="modal-content">
                 <div id="handSummaryContent"></div>
                 <button class="btn" onclick="closeHandSummary()">Close</button>
@@ -104,17 +110,31 @@
 
         <script type="text/javascript" src="/socket.io/socket.io.js"></script>
         <script type="text/javascript" src="/main.js"></script>
-
         <script>
-            const masterCheckbox = document.getElementById('masterCheckbox');
-            const controlledCheckboxes = document.querySelectorAll('.controlledCheckbox');
-            
-            masterCheckbox.addEventListener('click', () => {
-                const isChecked = masterCheckbox.checked;
-                controlledCheckboxes.forEach(checkbox => {
-                    checkbox.checked = isChecked;
-                });
-            });
+            function toggleTheme() {
+                const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+                const newTheme = isDark ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', newTheme);
+                document.getElementById('themeIcon').textContent = newTheme === 'dark' ? '🌙' : '☀️';
+                document.getElementById('themeLabel').textContent = newTheme === 'dark' ? 'Dark' : 'Light';
+                try { localStorage.setItem('quno-theme', newTheme); } catch(e) {}
+            }
+
+            // Restore saved preference
+            (function() {
+                try {
+                    const saved = localStorage.getItem('quno-theme');
+                    if (saved === 'dark') {
+                        document.documentElement.setAttribute('data-theme', 'dark');
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const icon = document.getElementById('themeIcon');
+                            const label = document.getElementById('themeLabel');
+                            if (icon) icon.textContent = '🌙';
+                            if (label) label.textContent = 'Dark';
+                        });
+                    }
+                } catch(e) {}
+            })();
         </script>
     </body>
 </html>
