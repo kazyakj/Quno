@@ -119,7 +119,7 @@ socket.on('rejoinState', function(state) {
         cardObj.id = 'discard';
         let discard = document.getElementById('discard');
         discard.parentNode.replaceChild(cardObj, discard);
-        updateColorBar(state.currentColor || null);
+        applyWildOverlay(state.currentColor || null);
     }
 
     if (state.currentPlayerId >= 0) {
@@ -264,12 +264,12 @@ socket.on('chooseColor', function() {
 // Display which color was selected after a wild is played
 socket.on('colorChosen', function(color) {
     currentColor = color;
-    updateColorBar(color);
+    applyWildOverlay(color);
 });
 
 // Hide the color bar after move past a wild
 socket.on('hideColor', function() {
-    updateColorBar(null);
+    applyWildOverlay(null);
 });
 
 // Update the list of allowable plays for the player
@@ -310,7 +310,8 @@ function setUnoButtonState(btnId, called) {
     const btn = document.getElementById(btnId);
     if (btn) {
         btn.disabled = called;
-        btn.style.background = called ? 'gray' : '#222';
+        btn.style.background = called ? 'gray' : '';
+        btn.style.color = called ? 'white' : '';
     }
 }
 
@@ -421,7 +422,7 @@ socket.on('logMessage', function(message) {
         yellow: '#FFAA01',
         green: '#55AA55',
         blue: '#5455FF',
-        black: 'black'
+        black: '#a0a0a0'
     };
     let formattedMessage = message;
 
@@ -435,6 +436,32 @@ socket.on('logMessage', function(message) {
 
     messageElement.innerHTML = formattedMessage;
     messageContainer.insertBefore(messageElement, messageContainer.firstChild);
+});
+
+// Display a rich formatted entry when the host changes game options
+socket.on('optionsChanged', function({ changedBy, options, labels }) {
+    const messageContainer = document.getElementById('message-container');
+    const el = document.createElement('div');
+    el.classList.add('message');
+
+    const rows = Object.entries(labels).map(([key, label]) => {
+        const on = !!options[key];
+        const dot   = on ? '●' : '○';
+        const color = on ? '#3db87a' : '#c94f5f';
+        const style = `color:${color};font-weight:700;margin-right:5px;`;
+        return `<div style="display:flex;align-items:center;padding:1px 0;">
+            <span style="${style}">${dot}</span>
+            <span class="log-option-label" style="font-size:11.5px;${on ? '' : 'opacity:0.55;'}">${label}</span>
+        </div>`;
+    }).join('');
+
+    el.innerHTML = `
+        <div style="font-size:11.5px;margin-bottom:5px;" class="log-meta">
+            <strong class="log-name">${changedBy}</strong> updated options
+        </div>
+        ${rows}
+    `;
+    messageContainer.insertBefore(el, messageContainer.firstChild);
 });
 
 // Returns an SVG pattern overlay element for a given card color
@@ -495,38 +522,41 @@ function getColorPatternSVG(color) {
     return svg;
 }
 
-// Apply pattern + text label to the color bar
-function updateColorBar(color) {
-    const bar = document.getElementById('color-bar');
-    if (!color || color === 'rgb(184, 184, 184)') {
-        bar.style.background = 'rgb(184, 184, 184)';
-        bar.innerHTML = '';
-        return;
+// Apply (or remove) a colored, patterned overlay on the discard card to show
+// the chosen wild color. No text label — color is communicated by hue + pattern.
+function applyWildOverlay(color) {
+    const discard = document.getElementById('discard');
+    if (!discard) return;
+
+    // Remove any existing overlay
+    const existing = discard.querySelector('.wild-color-overlay');
+    if (existing) existing.remove();
+
+    if (!color || color === 'rgb(184, 184, 184)') return;
+
+    const colorHex = { red: '#e8342a', green: '#3a9e3a', blue: '#4545ff', yellow: '#FFAA01' };
+    const bg = colorHex[color] || color;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'wild-color-overlay';
+    overlay.style.cssText = `
+        position: absolute;
+        inset: 0;
+        border-radius: 13px;
+        background: ${bg};
+        opacity: 0.72;
+        pointer-events: none;
+        z-index: 3;
+        overflow: hidden;
+    `;
+
+    const patternSVG = getColorPatternSVG(color);
+    if (patternSVG) {
+        patternSVG.style.borderRadius = '13px';
+        overlay.appendChild(patternSVG);
     }
 
-    const colorNames = { red: 'Red', green: 'Green', blue: 'Blue', yellow: 'Yellow' };
-    const label = colorNames[color] || color;
-    const textColor = (color === 'yellow') ? '#5a3a00' : 'white';
-
-    bar.style.background = color;
-    bar.style.position = 'relative';
-    bar.style.display = 'flex';
-    bar.style.alignItems = 'center';
-    bar.style.justifyContent = 'center';
-
-    // Clear old content and rebuild
-    bar.innerHTML = '';
-
-    const svgOverlay = getColorPatternSVG(color);
-    if (svgOverlay) {
-        svgOverlay.style.borderRadius = '0';
-        bar.appendChild(svgOverlay);
-    }
-
-    const span = document.createElement('span');
-    span.textContent = label;
-    span.style.cssText = `position:relative;z-index:1;font-size:11px;font-weight:bold;color:${textColor};letter-spacing:0.05em;`;
-    bar.appendChild(span);
+    discard.appendChild(overlay);
 }
 
 // Animate a card flying from a source element to the discard pile.
@@ -542,11 +572,23 @@ function animateCardPlay(sourceEl, srcRect) {
     // Clone at full logical size (cdWidth x cdHeight) and use transform: scale()
     // to match the visual size. This keeps background-position identical to the
     // original element throughout the flight — no sprite drift possible.
+    // The source card has backgroundSize/position scaled for 107px cells;
+    // rescale back to native cdWidth cells for this 120x180 flying div.
+    const nativeScale = cdWidth / 107; // ~1.121
+    const srcBgSize = sourceEl.style.backgroundSize || 'auto';
+    let flyingBgSize = srcBgSize;
+    let flyingBgPos  = sourceEl.style.backgroundPosition;
+    if (srcBgSize !== 'auto' && srcBgSize !== '' && srcBgSize !== '100%') {
+        const [sw, sh] = srcBgSize.replace(/px/g, '').split(' ').map(Number);
+        const [px, py] = sourceEl.style.backgroundPosition.replace(/px/g, '').split(' ').map(Number);
+        flyingBgSize = `${Math.round(sw * nativeScale)}px ${Math.round(sh * nativeScale)}px`;
+        flyingBgPos  = `${Math.round(px * nativeScale)}px ${Math.round(py * nativeScale)}px`;
+    }
     const flying = document.createElement('div');
     flying.className = 'card';
     flying.style.backgroundImage = sourceEl.style.backgroundImage;
-    flying.style.backgroundPosition = sourceEl.style.backgroundPosition;
-    flying.style.backgroundSize = sourceEl.style.backgroundSize || 'auto';
+    flying.style.backgroundPosition = flyingBgPos;
+    flying.style.backgroundSize = flyingBgSize;
     flying.style.position = 'fixed';
     flying.style.width = cdWidth + 'px';
     flying.style.height = cdHeight + 'px';
@@ -652,10 +694,16 @@ function getCardUI(card, player) {
         cardObj.setAttribute('dataCardColor', card.Color);
         cardObj.setAttribute('dataCardType', card.Type);
 
-        // Get card image from sprite sheet
-        const offsetX = 2 + 1680 - cdWidth * (card.ID % 14);
-        const offsetY = 1440 - cdHeight * Math.floor(card.ID / 14);
+        // Get card image from sprite sheet.
+        // Scale the sheet so each sprite cell matches --card-width (107px).
+        // Native cell: cdWidth x cdHeight (120 x 180). Scale = 107/120.
+        const spriteScale = 107 / 120;
+        const sheetW = Math.round(1688 * spriteScale); // ~1505
+        const sheetH = Math.round(1446 * spriteScale); // ~1289
+        const offsetX = Math.round((2 + 1680 - cdWidth * (card.ID % 14)) * spriteScale);
+        const offsetY = Math.round((1440 - cdHeight * Math.floor(card.ID / 14)) * spriteScale);
         cardObj.style.backgroundImage = 'url(' + cards.src + ')';
+        cardObj.style.backgroundSize = `${sheetW}px ${sheetH}px`;
         cardObj.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
 
         // Inject colorblind pattern overlay
@@ -704,9 +752,9 @@ function repositionCards(player) {
         hand.innerHTML = '';
 
         cards.forEach((card, i) => {
-            // As more cards as drawn, overlap them more
-            let marginLeft = i === 0 ? '-20' : -5 * (cardCount - 1) + 5;
-            if(marginLeft < -59) marginLeft = -59;
+            // Cards always overlap; increase overlap as hand grows
+            // At scale 0.6, card visible width is ~64px. Start at -40px, tighten to -59px max as hand grows.
+            let marginLeft = i === 0 ? 0 : Math.max(-59, -40 - (cardCount - 2) * 2);
             card.style.marginLeft = marginLeft + 'px';
             hand.appendChild(card);
         });

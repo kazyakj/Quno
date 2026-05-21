@@ -511,11 +511,7 @@ function onConnection(socket) {
             stackDraw2: 'Stack Draw 2s', skipDraw2: 'Skip Draw 2s', reverseDraw2: 'Reverse Draw 2s',
             stackDraw4: 'Stack Draw 4s', skipDraw4: 'Skip Draw 4s', reverseDraw4: 'Reverse Draw 4s',
         };
-        const active = selectedOptions.filter(o => optionLabels[o]).map(o => optionLabels[o]);
-        const logMsg = active.length > 0
-            ? `${socket.playerName} saved options: ${active.join(', ')}`
-            : `${socket.playerName} saved options: none selected`;
-        io.emit('logMessage', logMsg);
+        io.emit('optionsChanged', { changedBy: socket.playerName, options: allOptions, labels: optionLabels });
     });
 }
 
