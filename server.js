@@ -54,28 +54,38 @@ function onConnection(socket) {
         if(socket.id == playerA) {
             const targetSocket = Array.from(io.sockets.sockets.values()).find(s => s.playerName === targetName);
             if(targetSocket) {
+                // Capture the socket ID before disconnecting — it may become stale after disconnect(true)
+                const targetSocketId = targetSocket.id;
+                const wasCurrentPlayer = (targetSocketId === currentPlayer);
+
+                // Flag the socket so the disconnect handler skips its grace-period cleanup
+                targetSocket.wasBooted = true;
+
                 targetSocket.emit('booted');
-                targetSocket.disconnect(true); // forcibly disconnect the player
-                playersInLobby = playersInLobby.filter(p => p !== targetName);
-                
-                for (let [id, player] of players.entries()) {
-                    if (player.Name === targetName) {
-                        players.delete(id);
-                        break;
-                    }
+
+                // If it's the booted player's turn, advance BEFORE removing them —
+                // nextTurn() calls players.get(currentPlayer) and crashes if they're already gone.
+                // Also skip if only 1 player would remain: no turn to advance to.
+                if (wasCurrentPlayer && players.size > 2) {
+                    nextTurn();
                 }
-                
+
+                // Clean up state before disconnecting to prevent race with the disconnect handler
+                playersInLobby = playersInLobby.filter(p => p !== targetName);
+                players.delete(targetSocketId);
+
+                targetSocket.disconnect(true); // forcibly disconnect the player
+
+                io.emit('playerLeft', { playerName: targetName, playerId: -1 });
                 io.emit('setHost', hostName);
                 io.emit('newPlayer', { players: playersInLobby, host: hostName });
                 io.emit('logMessage', targetName + ' was booted by the host');
 
-                if (targetName === hostName) {
-                    playerA = null;
-                    hostName = null;
-                }
-
-                if (targetSocket.id == currentPlayer) {
-                    nextTurn();
+                // If only 1 player remains, end the game rather than leaving it in a broken state
+                if (players.size <= 1) {
+                    gameIsOver = true;
+                    io.emit('turnChange', -1);
+                    io.emit('logMessage', 'Game over — not enough players to continue');
                 }
             }
         }
@@ -83,6 +93,9 @@ function onConnection(socket) {
 
     // Remove a player if they leave
     socket.on('disconnect', () => {
+        // If this socket was booted by the host, bootPlayer already cleaned everything up
+        if (socket.wasBooted) return;
+
         const disconnectedName = socket.playerName;
         const disconnectedId = socket.id;
         const REJOIN_GRACE_MS = 10000;
