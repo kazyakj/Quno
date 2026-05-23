@@ -111,6 +111,7 @@
         <script type="text/javascript" src="/socket.io/socket.io.js"></script>
         <script type="text/javascript" src="/main.js"></script>
         <script>
+            // Toggle between light and dark mode and persist the choice
             function toggleTheme() {
                 const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
                 const newTheme = isDark ? 'light' : 'dark';
@@ -120,7 +121,7 @@
                 try { localStorage.setItem('quno-theme', newTheme); } catch(e) {}
             }
 
-            // Restore saved preference
+            // Apply saved theme preference before first paint to avoid a flash of light mode
             (function() {
                 try {
                     const saved = localStorage.getItem('quno-theme');
