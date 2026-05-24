@@ -932,7 +932,7 @@ function createPlayersUI(players) {
                 player_location += 8;
             }
 
-            const locationMap = [null, 5, 4, 3, 2, 1, 0, 6]; // maps seat distance to grid slot id
+            const locationMap = [null, 5, 3, 0, 1, 2, 4, 6]; // maps seat distance to grid slot id
             player_location = locationMap[player_location];
 
             document.getElementById('player' + player_location).appendChild(div_player);

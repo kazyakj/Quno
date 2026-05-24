@@ -6,6 +6,11 @@ const server = require('http').Server(app);
 const io = require('socket.io')(server);
 const port = process.env.PORT || 3000;
 
+const {
+    buildCard, createDeck: buildDeck, shuffle,
+    canPlay: canPlayHand, getPoints, nextPlayerID, reshuffleSeats: reshuffleSeatsMap,
+} = require('./gameLogic');
+
 app.use(express.static(__dirname + '/public', { 'Content-Type': 'application/javascript' }));
 io.on('connection', onConnection);
 server.listen(port, () => console.log('listening on port ' + port));
@@ -47,7 +52,7 @@ let skipDraw4 = false;
 let reverseDraw4 = false;
 
 // All card types — used to build the "excluded" list when checking who can stack
-let cardList = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'skip', 'reverse', 'draw2', 'wild', 'draw4']
+const cardList = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 'skip', 'reverse', 'draw2', 'wild', 'draw4'];
 
 // Cards a player is required to play on their turn (e.g. when stacking is enabled)
 let requiredPlay = [];
@@ -116,7 +121,7 @@ function onConnection(socket) {
                 playerA = nextSocket.id;
                 hostName = nextSocket.playerName;
                 io.to(nextSocket.id).emit('isPlayerA', { gameInProgress: !gameIsOver });
-                        io.to(nextSocket.id).emit('updateOptions', { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, stackDraw4, skipDraw4, reverseDraw4 });
+                io.to(nextSocket.id).emit('updateOptions', { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, stackDraw4, skipDraw4, reverseDraw4 });
                 io.emit('setHost', hostName);
                 io.emit('newPlayer', { players: playersInLobby, host: hostName });
             }
@@ -508,82 +513,27 @@ function onConnection(socket) {
     });
 }
 
-// ── Card lookup helpers ──
-// The deck is laid out as a sprite sheet: 14 columns × 8 rows.
-// Columns 0–12 are numbered cards (0–9) and action cards (skip, reverse, draw2).
-// Column 13 is always a wild or draw4. Rows 0–3 are the four colors; rows 4–7
-// repeat with a second set of each color card. cardColor/cardType/cardValue all
-// derive the relevant attribute from a card's 0-based index (0–111).
+// ── Thin wrappers around pure functions ──────────────────────────────────────
+// These bridge the pure gameLogic.js API (which takes explicit arguments) and
+// the server's module-level state (currentColor, currentType, players Map).
 
-// Look up the card's color based on position in the sprite sheet
-function cardColor(card) {
-    let color;
-
-    if(card % 14 === 13) {
-        return 'black'; // wilds and draw 4s are black
-    }
-
-    switch(Math.floor(card / 14)) {
-        case 0:
-        case 4:
-            color = 'red';
-            break;
-        case 1:
-        case 5:
-            color = 'yellow';
-            break;
-        case 2:
-        case 6:
-            color = 'green';
-            break;
-        case 3:
-        case 7:
-            color = 'blue';
-            break;
-    }
-
-    return color;
+// Returns true if the player with the given socket ID has a legally playable card
+function canPlay(socketId, invalidCards) {
+    const player = players.get(socketId);
+    return canPlayHand(player.Hand, currentColor, currentType, invalidCards);
 }
 
-// Look up the card's type based on position in the sprite sheet
-function cardType(card) {
-    switch(card % 14) {
-        case 10:
-            return 'skip';
-        case 11:
-            return 'reverse';
-        case 12:
-            return 'draw2';
-        case 13:
-            // Rows 4–7 (indices 56+) hold the draw 4s; rows 0–3 hold plain wilds
-            if(Math.floor(card / 14) >= 4) {
-                return 'draw4';
-            } else {
-                return 'wild';
-            }
-        default:
-            return card % 14; // numbered card — value doubles as type
-    }
+// Randomly reassign seat positions between hands
+function reshuffleSeats() {
+    reshuffleSeatsMap(players);
 }
 
-// Look up the card's point value (for end-of-hand scoring)
-function cardValue(card) {
-    let points;
-    switch(card % 14) {
-        case 10: // skip
-        case 11: // reverse
-        case 12: // draw 2
-            points = 20;
-            break;
-        case 13: // wild or draw 4
-            points = 50;
-            break;
-        default:
-            points = card % 14;
-            break;
-    }
-    return points;
+// Build a new shuffled deck and assign it to the module-level deck variable
+function createDeck() {
+    deck = buildDeck();
 }
+
+// ── Server-side game functions ────────────────────────────────────────────────
 
 // Build the players Map from all currently connected sockets
 function createPlayers() {
@@ -611,30 +561,6 @@ function createPlayers() {
         };
         players.set(socket.id, player);
     });
-}
-
-// Build a fresh 112-card shuffled deck
-function createDeck() {
-    deck = [];
-
-    for(let i = 0; i < 112; i++) {
-        let color = cardColor(i);
-        let type = cardType(i);
-        let value = cardValue(i);
-
-        let card = {'ID': i, 'Color': color, 'Type': type, 'Value': value};
-        deck.push(card);
-    }
-
-    shuffle(deck);
-}
-
-// Fisher-Yates shuffle
-function shuffle(deck) {
-    for(let i = deck.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
 }
 
 // Deal 7 cards to each player, then flip the first non-wild card to start the discard pile
@@ -741,6 +667,8 @@ function checkForWin(SocketID) {
         let winner = players.get(SocketID);
 
         const summary = getPoints(players, winner);
+        io.emit('updateScore', winner.PlayerID, winner.Points, winner.HandsWon);
+
         summary.winner = winner.Name;
         summary.handDuration = (Date.now() - handStartTime) / 1000;
         summary.matchDuration = (Date.now() - matchStartTime) / 1000;
@@ -756,51 +684,6 @@ function checkForWin(SocketID) {
         io.emit('gameOver', winner.Name);
         io.emit('logMessage', winner.Name + ' won the game');
     }
-}
-
-// Tally the points in each player's remaining hand and award them to the winner
-function getPoints(players, winner) {
-    let pointsThisHand = 0;
-    const breakdown = [];
-
-    players.forEach((player) => {
-        if (player.SocketID !== winner.SocketID) {
-            const pts = player.Hand.reduce((sum, card) => sum + card.Value, 0);
-
-            breakdown.push({
-                name: player.Name,
-                points: pts
-            });
-            pointsThisHand += pts;
-            player.PointsGivenUp += pts;
-        }
-    });
-
-    winner.Points += pointsThisHand;
-    winner.HandsWon++;
-    io.emit('updateScore', winner.PlayerID, winner.Points, winner.HandsWon);
-
-    const standings = Array.from(players.values())
-        .map(p => ({ name: p.Name, points: p.Points }))
-        .sort((a, b) => b.points - a.points);
-
-    const playerStats = Array.from(players.values()).map(p => ({
-        name: p.Name,
-        handCardsPlayed: p.HandCardsPlayed,
-        matchCardsPlayed: p.MatchCardsPlayed,
-        handTurnTime: Math.round(p.HandTurnTime),
-        matchTurnTime: Math.round(p.MatchTurnTime),
-        pointsScored: p.Points,
-        pointsGivenUp: p.PointsGivenUp,
-        netPoints: p.Points - p.PointsGivenUp
-    }));
-
-    return {
-        pointsThisHand,
-        breakdown,
-        standings,
-        playerStats
-    };
 }
 
 // Remove a card from a player's hand and push it onto the discard pile
@@ -842,19 +725,11 @@ function resolvePendingWin() {
 async function nextTurn(skipAutoDraw = false) {
     if (gameIsOver) return;
     let player = players.get(currentPlayer);
-    let currentPlayerID = player.PlayerID;
 
-    currentPlayerID += playDirection;
-
-    // Wrap around the player list
-    if(currentPlayerID < 0) {
-        currentPlayerID += players.size;
-    } else if(currentPlayerID >= players.size) {
-        currentPlayerID -= players.size;
-    }
+    const nextID = nextPlayerID(player.PlayerID, playDirection, players.size);
 
     players.forEach((nextPlayer) => {
-        if(nextPlayer.PlayerID == currentPlayerID) {
+        if(nextPlayer.PlayerID == nextID) {
             currentPlayer = nextPlayer.SocketID;
         }
     });
@@ -875,41 +750,10 @@ async function nextTurn(skipAutoDraw = false) {
         }
     }
 
-    player = players.get(currentPlayer);
     clearRequiredPlay();
     io.to(currentPlayer).emit('requiredPlay', requiredPlay);
-    io.emit('turnChange', currentPlayerID);
+    io.emit('turnChange', nextID);
     turnStartTime = Date.now();
-}
-
-// Return true if the player has at least one card they can legally play,
-// ignoring card types in the invalidCards list
-function canPlay(currentPlayer, invalidCards) {
-    let player = players.get(currentPlayer);
-
-    return player.Hand.some(card => {
-        if (invalidCards.includes(card.Type)) return false;
-        return (
-            card.Color === currentColor ||
-            card.Color === 'black' ||
-            card.Type === currentType
-        );
-    });
-}
-
-// Randomly reassign seat positions (PlayerIDs) between hands
-function reshuffleSeats() {
-    const playerArray = Array.from(players.values());
-    const ids = playerArray.map(p => p.PlayerID);
-
-    for (let i = ids.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [ids[i], ids[j]] = [ids[j], ids[i]];
-    }
-
-    playerArray.forEach((player, index) => {
-        player.PlayerID = ids[index];
-    });
 }
 
 // Reset game state and deal a new hand
