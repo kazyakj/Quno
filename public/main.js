@@ -111,7 +111,7 @@ socket.on('rejoinState', function(state) {
             let hand = document.getElementById('hand_' + player.PlayerID);
             if (!hand) continue;
             let cardObj = getCardUI(card, player);
-            cardObj.classList.add('unplayable');
+            if (player.SocketID === socketId) cardObj.classList.add('unplayable');
             hand.appendChild(cardObj);
         }
         repositionCards(player);
@@ -336,7 +336,7 @@ socket.on('renderCard', function(card, player) {
 
     animateCardDraw(hand, true, () => {
         let cardObj = getCardUI(card, player);
-        cardObj.classList.add('unplayable');
+        if (player.SocketID === socketId) cardObj.classList.add('unplayable');
         cardObj.style.opacity = '0';
         cardObj.style.transition = 'opacity 0.15s ease';
         hand.appendChild(cardObj);
@@ -724,6 +724,16 @@ function getCardUI(card, player) {
 
 // Reposition cards within a hand, applying fan overlap.
 // Own hand is sorted by color then type; opponent hands just stack in order.
+//
+// Overlap rules:
+//   - Cards are 107px CSS wide, rendered at scale(0.6) → 64.2px visual width.
+//   - CSS margin-left is pre-scale, so visual overlap = |marginLeft| * 0.6.
+//   - Opponents: minimum starting CSS margin = -70px (~65% overlap).
+//     Cards compress up to 75% visual overlap (CSS -80px) before the hand expands.
+//   - Own hand: minimum starting CSS margin = -57px (~53% overlap).
+//     Cards compress up to 60% visual overlap (CSS -64px) before the hand expands.
+//   - In both cases the hand uses as much available container space as possible
+//     before applying any extra overlap beyond the starting minimum.
 function repositionCards(player) {
     const hand = document.getElementById('hand_' + player.PlayerID);
     if (!hand) return;
@@ -731,7 +741,14 @@ function repositionCards(player) {
     const cards = Array.from(hand.children);
     const cardCount = cards.length;
 
-    if(player.SocketID == socketId) {
+    // Visual card width at 0.6 scale
+    const CSS_CARD_W = 107;
+    const SCALE      = 0.6;
+    const VIS_W      = CSS_CARD_W * SCALE; // 64.2px
+
+    if (player.SocketID == socketId) {
+        // ── Own hand ──
+        // Sort by color then type so the fan is visually organised.
         cards.sort((a, b) => {
             const colorDiff = a.getAttribute('dataCardColor').localeCompare(b.getAttribute('dataCardColor'));
             if (colorDiff !== 0) return colorDiff;
@@ -740,15 +757,59 @@ function repositionCards(player) {
 
         hand.innerHTML = '';
 
+        if (cardCount <= 1) {
+            cards.forEach(card => { card.style.marginLeft = '0px'; hand.appendChild(card); });
+            return;
+        }
+
+        // CSS margin limits (negative = overlap)
+        const MIN_MARGIN = -57;  // starting / minimum overlap at low card counts (~53% visual)
+        const MAX_MARGIN = -64;  // maximum allowed overlap before container must expand (~60% visual)
+
+        // How wide is the hand's grid cell? Walk up to the grid item (.playerOpponent /
+        // .playerSelf) for a stable measurement; the .hand div itself has no fixed width.
+        const gridCell = hand.closest('.playerOpponent, .playerSelf');
+        const containerW = (gridCell ? gridCell.offsetWidth : hand.offsetWidth) || 600;
+        // Padding-left (10px) eats into usable width
+        const usableW = containerW - 10;
+
+        // Margin needed to fit all cards exactly in the container:
+        // usableW = VIS_W + (cardCount-1) * (VIS_W + margin*SCALE)
+        // → margin = ((usableW - VIS_W) / (cardCount-1) - VIS_W) / SCALE
+        const fitMargin = ((usableW - VIS_W) / (cardCount - 1) - VIS_W) / SCALE;
+
+        // Clamp: don't overlap more than necessary, but never less than MAX_MARGIN
+        const margin = Math.max(MAX_MARGIN, Math.min(MIN_MARGIN, fitMargin));
+
         cards.forEach((card, i) => {
-            // Increase overlap as the hand grows so cards stay within the hand container
-            let marginLeft = i === 0 ? 0 : Math.max(-59, -40 - (cardCount - 2) * 2);
-            card.style.marginLeft = marginLeft + 'px';
+            card.style.marginLeft = (i === 0 ? 0 : margin) + 'px';
             hand.appendChild(card);
         });
+
     } else {
+        // ── Opponent hand ──
         hand.innerHTML = '';
-        cards.forEach((card, i) => hand.appendChild(card));
+
+        if (cardCount <= 1) {
+            cards.forEach(card => { card.style.marginLeft = '0px'; hand.appendChild(card); });
+            return;
+        }
+
+        const MIN_MARGIN = -70;  // starting / minimum overlap (~65% visual)
+        const MAX_MARGIN = -80;  // maximum allowed overlap before container must expand (~75% visual)
+
+        const gridCell = hand.closest('.playerOpponent, .playerSelf');
+        const containerW = (gridCell ? gridCell.offsetWidth : hand.offsetWidth) || 200;
+        const usableW = containerW - 10;
+
+        const fitMargin = ((usableW - VIS_W) / (cardCount - 1) - VIS_W) / SCALE;
+
+        const margin = Math.max(MAX_MARGIN, Math.min(MIN_MARGIN, fitMargin));
+
+        cards.forEach((card, i) => {
+            card.style.marginLeft = (i === 0 ? 0 : margin) + 'px';
+            hand.appendChild(card);
+        });
     }
 }
 
@@ -1046,7 +1107,7 @@ socket.on('handSummary', function(summary) {
     const ps = summary.playerStats || [];
 
     // Truncate long player names so they don't break table layout
-    const MAX_NAME = 14;
+    const MAX_NAME = 12;
     function truncate(name) {
         return name.length > MAX_NAME ? name.slice(0, MAX_NAME - 1) + '...' : name;
     }
@@ -1118,7 +1179,7 @@ socket.on('handSummary', function(summary) {
                         <th style="${thRight}">Points</th>
                     </tr></thead>
                     <tbody>
-                        ${summary.breakdown.map(b => `<tr><td style="${tdStyle}">${b.name}</td><td style="${tdRight}">${b.points}</td></tr>`).join('')}
+                        ${summary.breakdown.map(b => `<tr><td style="${tdStyle}">${truncate(b.name)}</td><td style="${tdRight}">${b.points}</td></tr>`).join('')}
                         ${breakdownpadding}
                     </tbody>
                 </table>

@@ -8,7 +8,7 @@ const {
     cardColor, cardType, cardValue, buildCard,
     createDeck, shuffle,
     canPlay, getPoints, nextPlayerID, reshuffleSeats,
-} = require('./gameLogic');
+} = require('./Gamelogic');
 
 // Test-only helper: build a minimal player object
 function makePlayer(socketId, playerID, hand = [], extra = {}) {

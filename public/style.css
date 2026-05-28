@@ -424,7 +424,7 @@ main .card {
     margin: 3px;
     vertical-align: top;
     white-space: nowrap;
-    margin-left: -50px;
+    margin-left: -57px;
     position: relative;
     z-index: 1;
     flex: 0 0 var(--card-width);
@@ -441,6 +441,7 @@ main .card.unplayable {
 
 main .card:first-child { margin-left: 0; }
 
+/* Opponent starting overlap — JS repositionCards overrides this dynamically */
 .playerOpponent .card { margin-left: -70px; }
 
 main .player .hand {

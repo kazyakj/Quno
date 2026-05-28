@@ -9,7 +9,7 @@ const port = process.env.PORT || 3000;
 const {
     buildCard, createDeck: buildDeck, shuffle,
     canPlay: canPlayHand, getPoints, nextPlayerID, reshuffleSeats: reshuffleSeatsMap,
-} = require('./gameLogic');
+} = require('./Gamelogic');
 
 app.use(express.static(__dirname + '/public', { 'Content-Type': 'application/javascript' }));
 io.on('connection', onConnection);
