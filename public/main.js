@@ -1,27 +1,28 @@
 const socket = io({autoConnect: false});
 
+// Card sprite dimensions at native size (before CSS scale)
 const cdWidth = 120;
 const cdHeight = 180;
-const cards = new Image();
-const back = new Image();
+const cards = new Image(); // sprite sheet (all card faces)
+const back = new Image();  // card back image
 let socketId = -1;
 let playerId = -1;
 let players = 0;
 let playerName;
 
-let isPlayerA = false;
+let isPlayerA = false;       // true if this client is the host
 let playerAName = null;
 let currentColor = null;
 let bootTargetId = null;
-let requiredPlay = [];
+let requiredPlay = [];       // card types this player must play on their turn (stacking rules)
 let playersInLobby = [];
 let gameInProgress = false;
-let isDrawing = false;
+let isDrawing = false;       // true while the server is dealing cards to this player
 
 const sidePanel = document.getElementById('side-panel');
 const collapseButton = document.getElementById('collapse-btn');
 
-// --- UI Helpers ---
+// ── UI Helpers ──
 
 function show(id, displayType = 'block') {
     document.getElementById(id).style.display = displayType;
@@ -31,6 +32,7 @@ function hide(id) {
     document.getElementById(id).style.display = 'none';
 }
 
+// Render the lobby player list, with host crown and boot-on-click for the host
 function renderPlayerList(lobbyPlayers, hostName) {
     const playerListDiv = document.getElementById('playerList');
     playerListDiv.innerHTML = "<strong>Players:</strong>&nbsp;";
@@ -62,7 +64,8 @@ collapseButton.addEventListener('click', () => {
     sidePanel.classList.toggle('collapsed');
 });
 
-// Connect player to the server
+// ── Socket event handlers ──
+
 socket.on('connect', function() {
     socketId = socket.id;
     socket.emit('requestJoin', playerName);
@@ -99,21 +102,22 @@ socket.on('rejoinState', function(state) {
 
     createPlayersUI(state.playerList);
 
-    // Update the player list header at the top
     playersInLobby = state.playersInLobby;
     renderPlayerList(state.playersInLobby, state.hostName);
 
+    // Render each player's hand (own cards face-up, opponents as card-backs)
     for (let player of state.playerList) {
         for (let card of player.Hand) {
             let hand = document.getElementById('hand_' + player.PlayerID);
             if (!hand) continue;
             let cardObj = getCardUI(card, player);
-            cardObj.classList.add('unplayable');
+            if (player.SocketID === socketId) cardObj.classList.add('unplayable');
             hand.appendChild(cardObj);
         }
         repositionCards(player);
     }
 
+    // Restore the top discard card
     if (state.topCard) {
         let cardObj = getCardUI(state.topCard);
         cardObj.id = 'discard';
@@ -122,6 +126,7 @@ socket.on('rejoinState', function(state) {
         applyWildOverlay(state.currentColor || null);
     }
 
+    // Highlight the active player and refresh playable cards if it's our turn
     if (state.currentPlayerId >= 0) {
         document.querySelectorAll('.player').forEach(p => p.classList.remove('active'));
         const activeEl = document.getElementById('player_' + state.currentPlayerId);
@@ -136,25 +141,24 @@ socket.on('rejoinState', function(state) {
     window.playWildDraw4Enabled = state.playWildDraw4;
 });
 
-// Set the game host
 socket.on('setHost', function(name) {
     playerAName = name;
 });
 
-// Show game controls to the host
+// Show host controls when this player becomes the host
 socket.on('isPlayerA', function(data) {
     isPlayerA = true;
     hide('waitingOverlay');
     show('btnStart', 'inline-block');
     show('btnOptions', 'inline-block');
-    // If we were promoted mid-game and the hand is already over, also show Deal
+    // If promoted mid-game after the hand is already over, also show Deal
     if (data && data.gameInProgress === false && gameInProgress === false) {
         show('btnDeal', 'inline-block');
     }
     updateStartButtonState();
 });
 
-// Update the state of the start button based on number of players
+// Disable the Start button until there are at least 2 players
 function updateStartButtonState() {
     const startBtn = document.getElementById('btnStart');
     const lobbyCount = playersInLobby.length;
@@ -170,11 +174,10 @@ function updateStartButtonState() {
     }
 }
 
-// Update game options
+// Sync all option checkboxes to the current server-side state
 socket.on('updateOptions', function(options) {
     window.playWildDraw4Enabled = options.playWildDraw4;
 
-    // Sync all checkboxes to the current server-side option state
     const optionMap = {
         playWildDraw4: 'playWildDraw4',
         stackDraw2:    'stackDraw2',
@@ -188,7 +191,7 @@ socket.on('updateOptions', function(options) {
         const cb = document.querySelector(`input[name="${name}"]`);
         if (cb) cb.checked = !!options[key];
     }
-    // Sync the Matt Mode master checkbox: checked only if all sub-options are on
+    // Matt Mode master checkbox is checked only if every sub-option is on
     const controlled = document.querySelectorAll('.controlledCheckbox');
     const master = document.getElementById('masterCheckbox');
     if (master && controlled.length) {
@@ -196,7 +199,6 @@ socket.on('updateOptions', function(options) {
     }
 });
 
-// Start the game
 socket.on('gameStarted', function(playerList) {
     players = playerList.length;
     hide('waitingOverlay');
@@ -204,22 +206,19 @@ socket.on('gameStarted', function(playerList) {
 
     playSound('audio/game-start.wav', 0.2);
 
-    // Show/hide elements for in-game state
     hide('status');
     hide('btnDeal');
     show('uno-buttons', 'flex');
     show('discard', 'inline-block');
     hide('color-buttons');
 
-    // Get this player's ID
     const self = playerList.find(p => p.SocketID === socketId);
     if (self) playerId = self.PlayerID;
 
-    // Display players
     createPlayersUI(playerList);
 });
 
-// Show or hide waiting overlay for non-host players
+// Show or hide the waiting overlay for non-host players
 function updateWaitingOverlay() {
     if (gameInProgress) return;
 
@@ -237,7 +236,7 @@ socket.on('playerLeft', function({ playerId: leftPlayerId }) {
     if (panel) panel.remove();
 });
 
-// Update the player list when a new player joins
+// Update the lobby player list when anyone joins or leaves
 socket.on('newPlayer', function(data) {
     const {players: lobbyPlayers, host: hostName} = data;
 
@@ -251,7 +250,7 @@ socket.on('newPlayer', function(data) {
     }
 });
 
-// Display the buttons to let the player pick a color after a wild is played
+// Show the color picker after this player plays a wild
 socket.on('chooseColor', function() {
     show('color-buttons', 'flex');
 
@@ -261,18 +260,16 @@ socket.on('chooseColor', function() {
     }
 });
 
-// Display which color was selected after a wild is played
 socket.on('colorChosen', function(color) {
     currentColor = color;
     applyWildOverlay(color);
 });
 
-// Hide the color bar after move past a wild
 socket.on('hideColor', function() {
     applyWildOverlay(null);
 });
 
-// Update the list of allowable plays for the player
+// Update which cards are playable when the server changes the required-play list
 socket.on('requiredPlay', list => {
     const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
     if (!myTurn) return;
@@ -280,25 +277,20 @@ socket.on('requiredPlay', list => {
     requiredPlay = list;
 
     const topCard = getTopCard();
-    
     updatePlayableCards(topCard, currentColor);
 });
 
-// Handle turn change
 socket.on('turnChange', function(PlayerID) {
-    // Mark all players as inactive
     document.querySelectorAll('.player').forEach(p => p.classList.remove('active'));
-
-    // Mark the player whose turn it is as active
     document.getElementById('player_' + PlayerID).classList.add('active');
 
     if(PlayerID == playerId) {
         playSound('audio/turn-change.wav');
 
         const topCard = getTopCard();
-        
         updatePlayableCards(topCard, currentColor);
     } else {
+        // It's not our turn — mark all our cards as unplayable
         const hand = document.getElementById('hand_' + playerId);
         if (hand) {
             hand.querySelectorAll('.card').forEach(c => c.classList.add('unplayable'));
@@ -306,6 +298,7 @@ socket.on('turnChange', function(PlayerID) {
     }
 });
 
+// Grey out / restore an Uno button to show it's been called or reset
 function setUnoButtonState(btnId, called) {
     const btn = document.getElementById(btnId);
     if (btn) {
@@ -320,18 +313,15 @@ socket.on('notCalledUnoMe', () => setUnoButtonState('btnUnoMe', false));
 socket.on('calledUnoYou',   () => setUnoButtonState('btnUnoYou', true));
 socket.on('notCalledUnoYou',() => setUnoButtonState('btnUnoYou', false));
 
-// Update the points of the player who won the game
 socket.on('updateScore', function(player, points, handsWon) {
     document.getElementById('points_' + player).innerHTML = 'Points: ' + points;
     document.getElementById('handsWon_' + player).innerHTML = 'Hands Won: ' + handsWon;
 });
 
-// Handle game over
 socket.on('gameOver', function(playerName) {
     playSound('audio/game-over.wav');
     gameInProgress = false;
 
-    // Display a winner message
     document.getElementById('status').innerHTML = playerName + ' WON';
     show('status', 'inline-block');
 
@@ -340,20 +330,20 @@ socket.on('gameOver', function(playerName) {
     }
 });
 
-// Render a card in a player's hand
+// Add a drawn card to this player's hand with a fade-in animation
 socket.on('renderCard', function(card, player) {
     let hand = document.getElementById('hand_' + player.PlayerID);
 
     animateCardDraw(hand, true, () => {
         let cardObj = getCardUI(card, player);
-        cardObj.classList.add('unplayable');
-        // Start invisible and fade in
+        if (player.SocketID === socketId) cardObj.classList.add('unplayable');
         cardObj.style.opacity = '0';
         cardObj.style.transition = 'opacity 0.15s ease';
         hand.appendChild(cardObj);
         repositionCards(player);
         requestAnimationFrame(() => requestAnimationFrame(() => { cardObj.style.opacity = '1'; }));
 
+        // If cards finished drawing and it's still our turn, refresh playable highlights
         if(!isDrawing && player.SocketID == socketId) {
             const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
             if (myTurn) {
@@ -365,10 +355,10 @@ socket.on('renderCard', function(card, player) {
     });
 });
 
-// Render a face-down card in an opponent's hand
+// Add a face-down card to an opponent's hand
 socket.on('renderOpponentCard', function(playerID) {
-    if (playerID == playerId) return;
-    
+    if (playerID == playerId) return; // our own card is handled by renderCard
+
     const hand = document.getElementById('hand_' + playerID);
     if (!hand) return;
 
@@ -389,29 +379,30 @@ socket.on('removeOpponentCard', function(playerID) {
     const hand = document.getElementById('hand_' + playerID);
     if (!hand) return;
 
-    // Remove the last card-back (opponents' hands only contain card-backs)
     const lastCard = hand.lastElementChild;
     if (lastCard) lastCard.remove();
 
     repositionCards({ SocketID: null, PlayerID: playerID });
 });
 
+// Lock all cards while the server is dealing this player their draw
 socket.on('drawStart', function() {
     isDrawing = true;
     const hand = document.getElementById('hand_' + playerId);
     if (hand) hand.querySelectorAll('.card').forEach(c => c.classList.add('unplayable'));
 });
 
+// Unlock cards when the draw sequence finishes
 socket.on('drawEnd', function() {
     isDrawing = false;
-    const myTurn = document.getElementById('player_' + playerId).classList.contains('active');  
+    const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
     if (myTurn) {
         const topCard = getTopCard();
         updatePlayableCards(topCard, currentColor);
     }
-});  
+});
 
-// Display log messages
+// Append a message to the game log, colorizing any color names found in the text
 socket.on('logMessage', function(message) {
     const messageContainer = document.getElementById('message-container');
     const messageElement = document.createElement('div');
@@ -438,7 +429,7 @@ socket.on('logMessage', function(message) {
     messageContainer.insertBefore(messageElement, messageContainer.firstChild);
 });
 
-// Display a rich formatted entry when the host changes game options
+// Display a rich log entry when the host changes game options
 socket.on('optionsChanged', function({ changedBy, options, labels }) {
     const messageContainer = document.getElementById('message-container');
     const el = document.createElement('div');
@@ -464,7 +455,10 @@ socket.on('optionsChanged', function({ changedBy, options, labels }) {
     messageContainer.insertBefore(el, messageContainer.firstChild);
 });
 
-// Returns an SVG pattern overlay element for a given card color
+// ── Card rendering helpers ──
+
+// Build an SVG pattern overlay element used for colorblind accessibility.
+// Each color gets a distinct pattern: red = horizontal stripes, green = dots, blue = diagonal lines.
 function getColorPatternSVG(color) {
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
@@ -481,7 +475,6 @@ function getColorPatternSVG(color) {
     const patternColor = 'rgba(255,255,255,0.45)';
 
     if (color === 'red') {
-        // Horizontal stripes
         patternEl.setAttribute("width", "9");
         patternEl.setAttribute("height", "9");
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -490,7 +483,6 @@ function getColorPatternSVG(color) {
         line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "5");
         patternEl.appendChild(line);
     } else if (color === 'green') {
-        // Dots
         patternEl.setAttribute("width", "9");
         patternEl.setAttribute("height", "9");
         const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
@@ -498,7 +490,6 @@ function getColorPatternSVG(color) {
         circle.setAttribute("fill", patternColor);
         patternEl.appendChild(circle);
     } else if (color === 'blue') {
-        // Diagonal lines
         patternEl.setAttribute("width", "12");
         patternEl.setAttribute("height", "12");
         const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
@@ -507,7 +498,7 @@ function getColorPatternSVG(color) {
         line.setAttribute("stroke", patternColor); line.setAttribute("stroke-width", "3");
         patternEl.appendChild(line);
     } else {
-        return null; // No pattern for black cards
+        return null; // no pattern for black (wild) cards
     }
 
     defs.appendChild(patternEl);
@@ -528,7 +519,6 @@ function applyWildOverlay(color) {
     const discard = document.getElementById('discard');
     if (!discard) return;
 
-    // Remove any existing overlay
     const existing = discard.querySelector('.wild-color-overlay');
     if (existing) existing.remove();
 
@@ -559,9 +549,11 @@ function applyWildOverlay(color) {
     discard.appendChild(overlay);
 }
 
-// Animate a card flying from a source element to the discard pile.
-// Fire-and-forget: all game state changes happen synchronously before calling
-// this; the animation is purely cosmetic and nothing waits on it.
+// ── Animations ──
+
+// Animate a card flying from a player's hand to the discard pile.
+// Fire-and-forget: all game state changes happen synchronously before this is called;
+// the animation is purely cosmetic and nothing waits on it.
 // srcRect must be captured BEFORE the source element is removed from the DOM.
 function animateCardPlay(sourceEl, srcRect) {
     const discard = document.getElementById('discard');
@@ -603,6 +595,7 @@ function animateCardPlay(sourceEl, srcRect) {
     const srcScale = srcRect.width / cdWidth;
     const dstScale = dstRect.width / cdWidth;
 
+    // Center-align the flying card over both its start and end positions
     const startX = srcRect.left + srcRect.width / 2 - (cdWidth * srcScale) / 2;
     const startY = srcRect.top + srcRect.height / 2 - (cdHeight * srcScale) / 2;
     const endX   = dstRect.left + dstRect.width / 2 - (cdWidth * dstScale) / 2;
@@ -613,6 +606,7 @@ function animateCardPlay(sourceEl, srcRect) {
     flying.style.transform = `scale(${srcScale})`;
     document.body.appendChild(flying);
 
+    // Double rAF ensures the browser has painted the start position before transitioning
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             flying.style.transition = 'left 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94), ' +
@@ -631,7 +625,7 @@ function animateCardPlay(sourceEl, srcRect) {
     });
 }
 
-// Animate a card flying from the draw pile to a target hand element
+// Animate a card flying from the draw pile to a target hand, then call onComplete
 function animateCardDraw(targetHandEl, isOwn, onComplete) {
     const pile = document.querySelector('.playArea1 .pile');
     if (!pile) { onComplete(); return; }
@@ -639,7 +633,6 @@ function animateCardDraw(targetHandEl, isOwn, onComplete) {
     const pileRect = pile.getBoundingClientRect();
     const handRect = targetHandEl.getBoundingClientRect();
 
-    // Create a flying card clone (always shows card back)
     const flying = document.createElement('div');
     flying.style.cssText = `
         position: fixed;
@@ -659,11 +652,9 @@ function animateCardDraw(targetHandEl, isOwn, onComplete) {
     `;
     document.body.appendChild(flying);
 
-    // Destination: center of the target hand
     const destX = handRect.left + handRect.width / 2 - (cdWidth * 0.6) / 2;
     const destY = handRect.top + handRect.height / 2 - (cdHeight * 0.6) / 2;
 
-    // Trigger animation on next frame
     requestAnimationFrame(() => {
         requestAnimationFrame(() => {
             flying.style.left = destX + 'px';
@@ -680,23 +671,24 @@ function animateCardDraw(targetHandEl, isOwn, onComplete) {
     });
 }
 
-// Create the UI element for a card
+// ── Card UI ──
+
+// Create a card div element. Own cards and the discard pile show the face;
+// opponents' cards show the back image and have no click handler.
 function getCardUI(card, player) {
     let cardObj = document.createElement('div');
     cardObj.className = 'card';
 
     const isMyCard = (player == null || player.SocketID == socketId);
-    
-    // Discard pile or the player
+
     if(isMyCard) {
-        // Only set revealing attributes on your own cards / discard
         cardObj.id = 'card_' + card.ID;
         cardObj.setAttribute('dataCardColor', card.Color);
         cardObj.setAttribute('dataCardType', card.Type);
 
-        // Get card image from sprite sheet.
-        // Scale the sheet so each sprite cell matches --card-width (107px).
-        // Native cell: cdWidth x cdHeight (120 x 180). Scale = 107/120.
+        // Position the correct sprite from the sheet.
+        // Scale the sheet so each cell matches --card-width (107px).
+        // Native cell size: cdWidth × cdHeight (120 × 180). Scale = 107/120.
         const spriteScale = 107 / 120;
         const sheetW = Math.round(1688 * spriteScale); // ~1505
         const sheetH = Math.round(1446 * spriteScale); // ~1289
@@ -706,16 +698,14 @@ function getCardUI(card, player) {
         cardObj.style.backgroundSize = `${sheetW}px ${sheetH}px`;
         cardObj.style.backgroundPosition = `${offsetX}px ${offsetY}px`;
 
-        // Inject colorblind pattern overlay
+        // Colorblind accessibility pattern overlay
         cardObj.style.position = 'relative';
         const patternOverlay = getColorPatternSVG(card.Color);
         if (patternOverlay) cardObj.appendChild(patternOverlay);
 
         if(player != null) {
-            // Make the card clickable if it's for the player
             cardObj.addEventListener('click', () => playCard(card, player));
 
-            // Bump cards up on the screen when they're hovered over
             cardObj.addEventListener('mouseenter', function () {
                 cardObj.style.transform = 'scale(0.6) translateY(-50px)';
             });
@@ -725,7 +715,6 @@ function getCardUI(card, player) {
             });
         }
     } else {
-        // Display back of card for opponent cards
         cardObj.style.backgroundImage = 'url(' + back.src + ')';
         cardObj.style.backgroundSize = '100%';
     }
@@ -733,7 +722,18 @@ function getCardUI(card, player) {
     return cardObj;
 }
 
-// Adjust card positioning as new cards get added to a hand
+// Reposition cards within a hand, applying fan overlap.
+// Own hand is sorted by color then type; opponent hands just stack in order.
+//
+// Overlap rules:
+//   - Cards are 107px CSS wide, rendered at scale(0.6) → 64.2px visual width.
+//   - CSS margin-left is pre-scale, so visual overlap = |marginLeft| * 0.6.
+//   - Opponents: minimum starting CSS margin = -70px (~65% overlap).
+//     Cards compress up to 75% visual overlap (CSS -80px) before the hand expands.
+//   - Own hand: minimum starting CSS margin = -57px (~53% overlap).
+//     Cards compress up to 60% visual overlap (CSS -64px) before the hand expands.
+//   - In both cases the hand uses as much available container space as possible
+//     before applying any extra overlap beyond the starting minimum.
 function repositionCards(player) {
     const hand = document.getElementById('hand_' + player.PlayerID);
     if (!hand) return;
@@ -741,8 +741,14 @@ function repositionCards(player) {
     const cards = Array.from(hand.children);
     const cardCount = cards.length;
 
-    if(player.SocketID == socketId) {
-        // Sort based on color and type
+    // Visual card width at 0.6 scale
+    const CSS_CARD_W = 107;
+    const SCALE      = 0.6;
+    const VIS_W      = CSS_CARD_W * SCALE; // 64.2px
+
+    if (player.SocketID == socketId) {
+        // ── Own hand ──
+        // Sort by color then type so the fan is visually organised.
         cards.sort((a, b) => {
             const colorDiff = a.getAttribute('dataCardColor').localeCompare(b.getAttribute('dataCardColor'));
             if (colorDiff !== 0) return colorDiff;
@@ -751,21 +757,63 @@ function repositionCards(player) {
 
         hand.innerHTML = '';
 
+        if (cardCount <= 1) {
+            cards.forEach(card => { card.style.marginLeft = '0px'; hand.appendChild(card); });
+            return;
+        }
+
+        // CSS margin limits (negative = overlap)
+        const MIN_MARGIN = -57;  // starting / minimum overlap at low card counts (~53% visual)
+        const MAX_MARGIN = -64;  // maximum allowed overlap before container must expand (~60% visual)
+
+        // How wide is the hand's grid cell? Walk up to the grid item (.playerOpponent /
+        // .playerSelf) for a stable measurement; the .hand div itself has no fixed width.
+        const gridCell = hand.closest('.playerOpponent, .playerSelf');
+        const containerW = (gridCell ? gridCell.offsetWidth : hand.offsetWidth) || 600;
+        // Padding-left (10px) eats into usable width
+        const usableW = containerW - 10;
+
+        // Margin needed to fit all cards exactly in the container:
+        // usableW = VIS_W + (cardCount-1) * (VIS_W + margin*SCALE)
+        // → margin = ((usableW - VIS_W) / (cardCount-1) - VIS_W) / SCALE
+        const fitMargin = ((usableW - VIS_W) / (cardCount - 1) - VIS_W) / SCALE;
+
+        // Clamp: don't overlap more than necessary, but never less than MAX_MARGIN
+        const margin = Math.max(MAX_MARGIN, Math.min(MIN_MARGIN, fitMargin));
+
         cards.forEach((card, i) => {
-            // Cards always overlap; increase overlap as hand grows
-            // At scale 0.6, card visible width is ~64px. Start at -40px, tighten to -59px max as hand grows.
-            let marginLeft = i === 0 ? 0 : Math.max(-59, -40 - (cardCount - 2) * 2);
-            card.style.marginLeft = marginLeft + 'px';
+            card.style.marginLeft = (i === 0 ? 0 : margin) + 'px';
             hand.appendChild(card);
         });
+
     } else {
-        // For opponent hands, just append in order
+        // ── Opponent hand ──
         hand.innerHTML = '';
-        cards.forEach((card, i) => hand.appendChild(card));
+
+        if (cardCount <= 1) {
+            cards.forEach(card => { card.style.marginLeft = '0px'; hand.appendChild(card); });
+            return;
+        }
+
+        const MIN_MARGIN = -70;  // starting / minimum overlap (~65% visual)
+        const MAX_MARGIN = -80;  // maximum allowed overlap before container must expand (~75% visual)
+
+        const gridCell = hand.closest('.playerOpponent, .playerSelf');
+        const containerW = (gridCell ? gridCell.offsetWidth : hand.offsetWidth) || 200;
+        const usableW = containerW - 10;
+
+        const fitMargin = ((usableW - VIS_W) / (cardCount - 1) - VIS_W) / SCALE;
+
+        const margin = Math.max(MAX_MARGIN, Math.min(MIN_MARGIN, fitMargin));
+
+        cards.forEach((card, i) => {
+            card.style.marginLeft = (i === 0 ? 0 : margin) + 'px';
+            hand.appendChild(card);
+        });
     }
 }
 
-// Update which cards are playable in the player's hand
+// Highlight playable cards and dim unplayable ones based on the current game state
 function updatePlayableCards(topCard, currentColor) {
     const hand = document.getElementById('hand_' + playerId);
     if (!hand) return;
@@ -776,7 +824,8 @@ function updatePlayableCards(topCard, currentColor) {
 
     let hasOtherPlayable = false;
 
-    // First pass: check if there are any other playable cards besides Wild Draw 4
+    // First pass: check if there are any playable cards other than Wild Draw 4
+    // (Wild Draw 4 is only legal if the player has no other playable card)
     cards.forEach(card => {
         const cardColor = card.getAttribute('dataCardColor');
         const cardType = card.getAttribute('dataCardType');
@@ -817,22 +866,21 @@ function updatePlayableCards(topCard, currentColor) {
     });
 }
 
-// Attempt to play a card
 function playCard(card, player) {
-    if (isDrawing) return;
+    if (isDrawing) return; // don't allow plays while a draw sequence is in progress
 
     socket.emit('playCard', card);
     repositionCards(player);
 }
 
-// Update the discard pile when a card is played
+// Update the discard pile when a card is played, with a flying animation
 socket.on('discardCard', function(card, player) {
     currentColor = card.Color;
 
     let cardObj = getCardUI(card);
     cardObj.id = 'discard';
 
-    // Initial deal — no animation, just swap immediately
+    // Initial deal — no animation, just swap the placeholder immediately
     if (player == null) {
         let discard = document.getElementById('discard');
         discard.parentNode.replaceChild(cardObj, discard);
@@ -842,21 +890,20 @@ socket.on('discardCard', function(card, player) {
     const isMyCard = player.SocketID === socketId;
 
     if (isMyCard) {
-        // Snapshot rect while element is still in the DOM, then do all state
-        // changes synchronously so turnChange/updatePlayableCards see correct state.
+        // Snapshot the source rect while the element is still in the DOM, then
+        // do all state changes synchronously so turnChange/updatePlayableCards
+        // see the correct state before the animation starts.
         const sourceEl = document.getElementById('card_' + card.ID);
         const srcRect = sourceEl ? sourceEl.getBoundingClientRect() : null;
         if (sourceEl) sourceEl.remove();
         repositionCards(player);
 
-        // Swap the discard immediately — turnChange reads getTopCard() from this
         let discard = document.getElementById('discard');
         discard.parentNode.replaceChild(cardObj, discard);
 
-        // Animation is purely cosmetic, fires after all state is already correct
         animateCardPlay(sourceEl, srcRect);
     } else {
-        // Opponent: removeOpponentCard handles DOM removal and repositionCards.
+        // For opponents, removeOpponentCard handles DOM removal and repositionCards.
         // Snapshot for animation before it's removed.
         const hand = document.getElementById('hand_' + player.PlayerID);
         const sourceEl = hand ? hand.lastElementChild : null;
@@ -869,38 +916,38 @@ socket.on('discardCard', function(card, player) {
     }
 });
 
-// Play sound when a card is drawn
 socket.on('cardDrawn', function() {
     playSound('audio/draw-card.wav');
 });
 
-// Save the player name for next visit
+// ── Persistence ──
+
 function savePlayerName(name) {
     localStorage.setItem('playerName', name);
 }
 
-// Get the player name from local storage if it exists
 function getSavedPlayerName() {
     return localStorage.getItem('playerName');
 }
 
-// Start a new match
+// ── Game action buttons ──
+
 function resetGame() {
     socket.emit('resetGame');
 }
 
-// Deal a new hand within the same match
 function newHand() {
     socket.emit('newHand');
 }
 
-// Set a new color after a color button has been clicked after a wild
+// Send the chosen color to the server after a wild is played
 function setColor(color) {
     hide('color-buttons');
     socket.emit('colorChosen', color);
 }
 
-// Display all players around the table
+// Build player panels around the table. The local player goes in the bottom slot;
+// opponents are placed in the surrounding grid positions relative to seat order.
 function createPlayersUI(players) {
     for (let i = 0; i < 7;  i++) {
         document.getElementById('player' + i).innerHTML = '';
@@ -937,17 +984,16 @@ function createPlayersUI(players) {
         div_player.appendChild(div_points);
         div_player.appendChild(div_hands_won);
         if(players[i].SocketID == socketId) {
-            // Add the player to the bottom of the screen
             document.getElementById('playerSelf').appendChild(div_player);
         } else {
-            // Add opponents to spots around the table based on player order in the game
+            // Place the opponent in a grid slot based on how far ahead of us they sit
             let player_location = playerId - players[i].PlayerID;
 
             if(player_location < 0) {
                 player_location += 8;
             }
 
-            const locationMap = [null, 5, 4, 3, 2, 1, 0, 6]; // Maps player_location to player div id
+            const locationMap = [null, 5, 3, 0, 1, 2, 4, 6]; // maps seat distance to grid slot id
             player_location = locationMap[player_location];
 
             document.getElementById('player' + player_location).appendChild(div_player);
@@ -955,7 +1001,6 @@ function createPlayersUI(players) {
     }
 }
 
-// Call Uno for oneself or another player
 function unoCall(type) {
     setUnoButtonState('btnUno' + type, true);
     socket.emit('uno' + type);
@@ -964,7 +1009,6 @@ function unoCall(type) {
 function unoMe() { unoCall('Me'); }
 function unoYou() { unoCall('You'); }
 
-// Toggle the game options panel
 function showOptions() {
     const options = document.getElementById('options');
     if (options.style.display === 'flex') {
@@ -974,7 +1018,6 @@ function showOptions() {
     }
 }
 
-// Save the game options
 function saveOptions() {
     hide('options');
     let checkboxes = document.querySelectorAll('#options input[type="checkbox"]:checked');
@@ -983,35 +1026,31 @@ function saveOptions() {
     socket.emit('saveOptions', {options: selectedValues});
 }
 
-// Initialize the game
+// ── Initialization ──
+
 function init() {
     cards.src = 'images/deck_full.png';
     back.src = 'images/quno.png';
-  
-    // Get the player name
+
     playerName = getSavedPlayerName();
     if(playerName == null) {
-        // Default autogenerated name
         let defaultName = 'Player' + Math.floor(1000 + Math.random() * 9000);
 
-        // Prompt player for a new name
         playerName = prompt('Enter your name: ', defaultName);
 
         if (playerName === null || playerName === "") {
             playerName = defaultName;
         } else {
-            // Save the name for next time
             savePlayerName(playerName);
         }
     }
 
     playerName = playerName.substring(0, 29);
-  
-    // Connect to the server
+
     socket.connect();
 }
 
-// Show the boot confirmation modal
+// Show the boot confirmation modal before sending the boot request to the server
 function showBootModal(playerName) {
     const modal = document.getElementById('bootModal');
     const msg = document.getElementById('bootMessage');
@@ -1031,14 +1070,13 @@ function showBootModal(playerName) {
     };
 }
 
-// Play a sound effect
 function playSound(src, volume=1.0) {
     const audio = new Audio(src);
     audio.volume = volume;
     audio.play();
 }
 
-// Get the top card on the discard pile
+// Read the top card's color and type from the discard pile DOM element
 function getTopCard() {
     const discard = document.getElementById('discard');
     return {
@@ -1047,12 +1085,11 @@ function getTopCard() {
     };
 }
 
-// Handle being booted from the game
+// Replace the page with a boot message and prevent reconnection
 socket.on('booted', () => {
-    socket.io.opts.reconnection = false; // stop Socket.IO from auto-reconnecting
-    socket.disconnect(); // force disconnection from server
+    socket.io.opts.reconnection = false;
+    socket.disconnect();
 
-    // Replace page content so they can’t keep playing
     document.body.innerHTML = `
         <div style="text-align:center; margin-top:100px;">
             <h1>You have been booted from the game.</h1>
@@ -1061,7 +1098,8 @@ socket.on('booted', () => {
     `;
 });
 
-// Show end-of-hand summary
+// ── End-of-hand summary modal ──
+
 socket.on('handSummary', function(summary) {
     const modal = document.getElementById('handSummaryModal');
     const content = document.getElementById('handSummaryContent');
@@ -1069,17 +1107,18 @@ socket.on('handSummary', function(summary) {
     const ps = summary.playerStats || [];
 
     // Truncate long player names so they don't break table layout
-    const MAX_NAME = 14;
+    const MAX_NAME = 12;
     function truncate(name) {
         return name.length > MAX_NAME ? name.slice(0, MAX_NAME - 1) + '...' : name;
     }
 
-    const thBase  = 'padding:7px 10px;font-size:11px;color:#6b8a7a;font-weight:700;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid rgba(0,232,154,0.3);'; 
+    const thBase  = 'padding:7px 10px;font-size:11px;color:#6b8a7a;font-weight:700;text-transform:uppercase;letter-spacing:.07em;border-bottom:1px solid rgba(0,232,154,0.3);';
     const thStyle = 'text-align:left;' + thBase;
     const thRight = 'text-align:right;' + thBase;
     const tdStyle = 'padding:6px 8px;font-size:14px;';
     const tdRight = 'text-align:right;padding:6px 8px;font-size:14px;';
 
+    // Build one table row per player showing cards played and time spent
     function buildTurnRows(cardsKey, timeKey) {
         return ps.map(p =>
             `<tr>
@@ -1090,11 +1129,9 @@ socket.on('handSummary', function(summary) {
         ).join('');
     }
 
-    // Build per-player turn time rows for hand and match
     const handTurnRows = buildTurnRows('handCardsPlayed', 'handTurnTime');
     const matchTurnRows = buildTurnRows('matchCardsPlayed', 'matchTurnTime');
 
-    // Build per-player standings rows for match
     const standingRows = ps
         .slice()
         .sort((a, b) => (b.pointsScored - a.pointsScored) || (b.netPoints - a.netPoints))
@@ -1113,10 +1150,11 @@ socket.on('handSummary', function(summary) {
     const slabel = 'font-size:11px;color:#6b8a7a;text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;';
     const sval = 'font-size:1.15rem;font-weight:700';
 
+    // Pad the points-given-up table to match the standings row count
     const breakdownRows = summary.breakdown.length;
     const standingsCount = ps.length;
     const paddingRows = Math.max(0, standingsCount - breakdownRows);
-    const breakdownpadding = paddingRows > 0 
+    const breakdownpadding = paddingRows > 0
         ? `<tr><td colspan="2" style="padding:${paddingRows * 33}px 0 0;"></td></tr>`
         : '';
 
@@ -1141,7 +1179,7 @@ socket.on('handSummary', function(summary) {
                         <th style="${thRight}">Points</th>
                     </tr></thead>
                     <tbody>
-                        ${summary.breakdown.map(b => `<tr><td style="${tdStyle}">${b.name}</td><td style="${tdRight}">${b.points}</td></tr>`).join('')}
+                        ${summary.breakdown.map(b => `<tr><td style="${tdStyle}">${truncate(b.name)}</td><td style="${tdRight}">${b.points}</td></tr>`).join('')}
                         ${breakdownpadding}
                     </tbody>
                 </table>
@@ -1194,7 +1232,7 @@ socket.on('handSummary', function(summary) {
     modal.style.display = 'flex';
 });
 
-// Format a duration in seconds into a human-readable string
+// Format a duration in seconds as "Xh Ym Zs", omitting leading zeroes
 function formatDuration(totalSeconds) {
     const seconds = Number(totalSeconds);
 
@@ -1211,12 +1249,11 @@ function formatDuration(totalSeconds) {
         .join(' ');
 }
 
-// Close the hand summary modal
 function closeHandSummary() {
     document.getElementById('handSummaryModal').style.display = 'none';
 }
 
-// Wire up the "Matt Mode" master checkbox to toggle all sub-options
+// Wire up the "Matt Mode" master checkbox to toggle all sub-options at once
 const masterCheckbox = document.getElementById('masterCheckbox');
 const controlledCheckboxes = document.querySelectorAll('.controlledCheckbox');
 masterCheckbox.addEventListener('click', () => {

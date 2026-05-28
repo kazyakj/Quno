@@ -313,7 +313,7 @@ main #status {
     border: 1px solid var(--border-subtle);
 }
 
-/* Grid positions — unchanged from original */
+/* Grid positions — 8-column grid with the play area in the center two columns */
 #player0 { grid-column: 2 / span 2; grid-row: 1; }
 #player1 { grid-column: 4 / span 2; grid-row: 1; }
 #player2 { grid-column: 6 / span 2; grid-row: 1; }
@@ -410,7 +410,9 @@ main #status {
     color: var(--text-primary);
 }
 
-/* Cards — mostly untouched, minor radius tweak */
+/* Cards are rendered at native sprite size then scaled down to 60% via transform.
+   Using transform: scale() (rather than setting width/height directly) keeps the
+   sprite background-position math simple and avoids layout reflow on hover. */
 main .card {
     width: var(--card-width);
     height: var(--card-height);
@@ -422,7 +424,7 @@ main .card {
     margin: 3px;
     vertical-align: top;
     white-space: nowrap;
-    margin-left: -50px;
+    margin-left: -57px;
     position: relative;
     z-index: 1;
     flex: 0 0 var(--card-width);
@@ -439,6 +441,7 @@ main .card.unplayable {
 
 main .card:first-child { margin-left: 0; }
 
+/* Opponent starting overlap — JS repositionCards overrides this dynamically */
 .playerOpponent .card { margin-left: -70px; }
 
 main .player .hand {
@@ -453,6 +456,9 @@ main .player .hand {
     overflow: visible;
 }
 
+/* The discard card is pinned to the center of its play-area cell and shown at
+   full card size with no transform, regardless of the CSS scaling applied to
+   hand cards. pointer-events: none prevents accidental clicks on the discard. */
 #discard,
 main #discard.card {
     width: var(--card-width) !important;
