@@ -147,8 +147,50 @@ function reshuffleSeats(playersMap) {
     });
 }
 
+// ── buildRequiredPlay ─────────────────────────────────────────────────────────
+// Returns the list of card types the current player is allowed to play given
+// the active draw stack.  All inputs are explicit so this stays side-effect free.
+//
+// stackType:   'draw2' | 'draw4' | null
+// options:     object with boolean flags matching the server option names:
+//              stackDraw2, skipDraw2, reverseDraw2, stackDraw4, skipDraw4, reverseDraw4
+
+function buildRequiredPlay(stackType, options = {}) {
+    const rp = [];
+    if (stackType === 'draw2') {
+        if (options.stackDraw2)   rp.push('draw2');
+        if (options.skipDraw2)    rp.push('skip');
+        if (options.reverseDraw2) rp.push('reverse');
+    } else if (stackType === 'draw4') {
+        if (options.stackDraw4)   rp.push('draw4');
+        if (options.skipDraw4)    rp.push('skip');
+        if (options.reverseDraw4) rp.push('reverse');
+    }
+    return rp;
+}
+
+// ── computeHandMargin ─────────────────────────────────────────────────────────
+// Returns the CSS margin-left (in px, negative = overlap) to apply between
+// cards in a hand, given the container width, card count, and scale constants.
+// Clamped between minMargin and maxMargin.
+//
+// usableW:    available container width in px (container width minus any padding)
+// cardCount:  number of cards in the hand
+// cssCardW:   card width before CSS scale is applied (default 107)
+// scale:      CSS scale factor (default 0.6)
+// minMargin:  minimum (least-overlap) margin — cards start here (e.g. -57 for own, -70 for opponent)
+// maxMargin:  maximum (most-overlap) margin — hard cap on compression (e.g. -64 or -80)
+
+function computeHandMargin(usableW, cardCount, cssCardW = 107, scale = 0.6, minMargin = -57, maxMargin = -64) {
+    if (cardCount <= 1) return 0;
+    const visW = cssCardW * scale;
+    const fitMargin = ((usableW - visW) / (cardCount - 1) - visW) / scale;
+    return Math.max(maxMargin, Math.min(minMargin, fitMargin));
+}
+
 module.exports = {
     cardColor, cardType, cardValue, buildCard,
     createDeck, shuffle,
     canPlay, getPoints, nextPlayerID, reshuffleSeats,
+    buildRequiredPlay, computeHandMargin,
 };

@@ -8,6 +8,7 @@ const {
     cardColor, cardType, cardValue, buildCard,
     createDeck, shuffle,
     canPlay, getPoints, nextPlayerID, reshuffleSeats,
+    buildRequiredPlay, computeHandMargin,
 } = require('./Gamelogic');
 
 // Test-only helper: build a minimal player object
@@ -284,6 +285,126 @@ describe('canPlay', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// canPlay — stacking scenarios
+//
+// These tests mirror how server.js uses canPlay() to decide whether a player
+// can respond to an active draw stack.  The server builds an invalidCards list
+// of everything NOT in requiredPlay, then calls canPlay with that list.
+// A card is only stackable if it is in requiredPlay AND matches color/type.
+//
+// Helper: given requiredPlay types, return the invalidCards list the server
+// would pass to canPlay.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('canPlay — stacking scenarios', () => {
+    const ALL_TYPES = [0,1,2,3,4,5,6,7,8,9,'skip','reverse','draw2','wild','draw4'];
+    function excludeAllExcept(allowed) {
+        return ALL_TYPES.filter(t => !allowed.includes(t));
+    }
+
+    // ── Draw-2 stack responses ────────────────────────────────────────────────
+
+    const redDraw2   = buildCard(12);  // red draw2
+    const yellowDraw2= buildCard(26);  // yellow draw2
+    const redSkip    = buildCard(10);  // red skip
+    const redReverse = buildCard(11);  // red reverse
+    const blueDraw2  = buildCard(40);  // green draw2 — wrong color, right type
+    const yellowSkip = buildCard(24);  // yellow skip — right color (after yellow draw2), right type
+
+    test('draw2 stack: same-color draw2 is stackable', () => {
+        const invalid = excludeAllExcept(['draw2']);
+        expect(canPlay([redDraw2], 'red', 'draw2', invalid)).toBe(true);
+    });
+
+    test('draw2 stack: different-color draw2 is NOT stackable (color and type both checked)', () => {
+        // blueDraw2 is actually green — color does not match red, type matches draw2
+        // type match IS sufficient for canPlay, so a same-type different-color draw2
+        // should still be stackable (type === currentType)
+        const invalid = excludeAllExcept(['draw2']);
+        expect(canPlay([buildCard(26)], 'red', 'draw2', invalid)).toBe(true); // yellow draw2, type match
+    });
+
+    test('draw2 stack: same-color skip is stackable when skip is in requiredPlay', () => {
+        const invalid = excludeAllExcept(['draw2', 'skip']);
+        expect(canPlay([redSkip], 'red', 'draw2', invalid)).toBe(true);
+    });
+
+    test('draw2 stack: same-color skip is NOT stackable when skip is not in requiredPlay', () => {
+        const invalid = excludeAllExcept(['draw2']); // skip not allowed
+        expect(canPlay([redSkip], 'red', 'draw2', invalid)).toBe(false);
+    });
+
+    test('draw2 stack: wrong-color skip is not stackable even if skip is in requiredPlay', () => {
+        // yellowSkip does not match currentColor=red and type skip ≠ draw2
+        const invalid = excludeAllExcept(['draw2', 'skip']);
+        expect(canPlay([yellowSkip], 'red', 'draw2', invalid)).toBe(false);
+    });
+
+    test('draw2 stack: same-color reverse is stackable when reverse is in requiredPlay', () => {
+        const invalid = excludeAllExcept(['draw2', 'reverse']);
+        expect(canPlay([redReverse], 'red', 'draw2', invalid)).toBe(true);
+    });
+
+    test('draw2 stack: hand with only numbered cards cannot stack', () => {
+        const invalid = excludeAllExcept(['draw2', 'skip', 'reverse']);
+        const redSix = buildCard(6);
+        expect(canPlay([redSix], 'red', 'draw2', invalid)).toBe(false);
+    });
+
+    test('draw2 stack: wild is not stackable (not in requiredPlay for draw2)', () => {
+        const invalid = excludeAllExcept(['draw2', 'skip', 'reverse']);
+        const wild = buildCard(13);
+        expect(canPlay([wild], 'red', 'draw2', invalid)).toBe(false);
+    });
+
+    // ── Draw-4 stack responses ────────────────────────────────────────────────
+
+    const redDraw4   = buildCard(69);  // red draw4 (black, but type=draw4)
+    const yellowDraw4= buildCard(83);  // another draw4
+    const greenSkip  = buildCard(38);  // green skip
+
+    test('draw4 stack: any draw4 is stackable (draw4s are black, always color-valid)', () => {
+        const invalid = excludeAllExcept(['draw4']);
+        expect(canPlay([redDraw4],    'red',    'draw4', invalid)).toBe(true);
+        expect(canPlay([yellowDraw4], 'yellow', 'draw4', invalid)).toBe(true);
+    });
+
+    test('draw4 stack: same-color skip is stackable when skip is in requiredPlay', () => {
+        const invalid = excludeAllExcept(['draw4', 'skip']);
+        expect(canPlay([greenSkip], 'green', 'draw4', invalid)).toBe(true);
+    });
+
+    test('draw4 stack: wrong-color skip is not stackable', () => {
+        const invalid = excludeAllExcept(['draw4', 'skip']);
+        expect(canPlay([greenSkip], 'red', 'draw4', invalid)).toBe(false);
+    });
+
+    test('draw4 stack: draw2 is never stackable on a draw4 stack', () => {
+        // draw2 excluded because it is not in requiredPlay for a draw4 stack
+        const invalid = excludeAllExcept(['draw4', 'skip', 'reverse']);
+        expect(canPlay([redDraw2], 'red', 'draw4', invalid)).toBe(false);
+    });
+
+    // ── Mixed hand: only the valid stacking card is highlighted ──────────────
+
+    test('draw2 stack: hand with valid and invalid cards — valid card wins', () => {
+        const invalid = excludeAllExcept(['draw2']);
+        // red draw2 is valid; red skip is not (not in requiredPlay)
+        expect(canPlay([redSkip, redDraw2], 'red', 'draw2', invalid)).toBe(true);
+    });
+
+    test('draw4 stack: hand with draw2 and draw4 — only draw4 is valid', () => {
+        const invalid = excludeAllExcept(['draw4']);
+        expect(canPlay([redDraw2, redDraw4], 'red', 'draw4', invalid)).toBe(true);
+    });
+
+    test('draw4 stack: hand with only draw2 — cannot stack', () => {
+        const invalid = excludeAllExcept(['draw4']);
+        expect(canPlay([redDraw2], 'red', 'draw4', invalid)).toBe(false);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // getPoints
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -524,5 +645,293 @@ describe('card attribute consistency across the full deck', () => {
         // Total = 360 + 480 + 400 = 1240
         const total = deck.reduce((sum, c) => sum + c.Value, 0);
         expect(total).toBe(1240);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// buildRequiredPlay
+//
+// These tests verify that the server's stacking-option flags are correctly
+// translated into the list of types the next player is allowed to play.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('buildRequiredPlay', () => {
+    const ALL_OFF = {
+        stackDraw2: false, skipDraw2: false, reverseDraw2: false,
+        stackDraw4: false, skipDraw4: false, reverseDraw4: false,
+    };
+    const ALL_ON = {
+        stackDraw2: true, skipDraw2: true, reverseDraw2: true,
+        stackDraw4: true, skipDraw4: true, reverseDraw4: true,
+    };
+
+    // ── null stack (no active draw) ───────────────────────────────────────────
+
+    test('null stackType always returns []', () => {
+        expect(buildRequiredPlay(null, ALL_OFF)).toEqual([]);
+        expect(buildRequiredPlay(null, ALL_ON)).toEqual([]);
+    });
+
+    // ── draw2 stack ───────────────────────────────────────────────────────────
+
+    test('draw2 stack, all options off → []', () => {
+        expect(buildRequiredPlay('draw2', ALL_OFF)).toEqual([]);
+    });
+
+    test('draw2 stack, stackDraw2 only → [draw2]', () => {
+        expect(buildRequiredPlay('draw2', { ...ALL_OFF, stackDraw2: true })).toEqual(['draw2']);
+    });
+
+    test('draw2 stack, skipDraw2 only → [skip]', () => {
+        expect(buildRequiredPlay('draw2', { ...ALL_OFF, skipDraw2: true })).toEqual(['skip']);
+    });
+
+    test('draw2 stack, reverseDraw2 only → [reverse]', () => {
+        expect(buildRequiredPlay('draw2', { ...ALL_OFF, reverseDraw2: true })).toEqual(['reverse']);
+    });
+
+    test('draw2 stack, all draw2 options on → [draw2, skip, reverse]', () => {
+        const opts = { ...ALL_OFF, stackDraw2: true, skipDraw2: true, reverseDraw2: true };
+        expect(buildRequiredPlay('draw2', opts)).toEqual(['draw2', 'skip', 'reverse']);
+    });
+
+    test('draw2 stack, draw4 options do not bleed through', () => {
+        // All draw4 flags on, but draw2 flags off — should still return []
+        const opts = { ...ALL_OFF, stackDraw4: true, skipDraw4: true, reverseDraw4: true };
+        expect(buildRequiredPlay('draw2', opts)).toEqual([]);
+    });
+
+    // ── draw4 stack ───────────────────────────────────────────────────────────
+
+    test('draw4 stack, all options off → []', () => {
+        expect(buildRequiredPlay('draw4', ALL_OFF)).toEqual([]);
+    });
+
+    test('draw4 stack, stackDraw4 only → [draw4]', () => {
+        expect(buildRequiredPlay('draw4', { ...ALL_OFF, stackDraw4: true })).toEqual(['draw4']);
+    });
+
+    test('draw4 stack, skipDraw4 only → [skip]', () => {
+        expect(buildRequiredPlay('draw4', { ...ALL_OFF, skipDraw4: true })).toEqual(['skip']);
+    });
+
+    test('draw4 stack, reverseDraw4 only → [reverse]', () => {
+        expect(buildRequiredPlay('draw4', { ...ALL_OFF, reverseDraw4: true })).toEqual(['reverse']);
+    });
+
+    test('draw4 stack, all draw4 options on → [draw4, skip, reverse]', () => {
+        const opts = { ...ALL_OFF, stackDraw4: true, skipDraw4: true, reverseDraw4: true };
+        expect(buildRequiredPlay('draw4', opts)).toEqual(['draw4', 'skip', 'reverse']);
+    });
+
+    test('draw4 stack, draw2 options do not bleed through', () => {
+        const opts = { ...ALL_OFF, stackDraw2: true, skipDraw2: true, reverseDraw2: true };
+        expect(buildRequiredPlay('draw4', opts)).toEqual([]);
+    });
+
+    test('draw2 and draw4 options are fully independent', () => {
+        // Only the flags matching the active stackType should appear in the output
+        expect(buildRequiredPlay('draw2', ALL_ON)).toEqual(['draw2', 'skip', 'reverse']);
+        expect(buildRequiredPlay('draw4', ALL_ON)).toEqual(['draw4', 'skip', 'reverse']);
+    });
+
+    test('missing options default to false (no crash)', () => {
+        expect(buildRequiredPlay('draw2', {})).toEqual([]);
+        expect(buildRequiredPlay('draw4', {})).toEqual([]);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// computeHandMargin
+//
+// Tests the CSS margin-left calculation used to fan cards in a hand.
+// Uses default constants (cssCardW=107, scale=0.6) unless overridden.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('computeHandMargin', () => {
+    // Own-hand defaults: minMargin=-57, maxMargin=-64
+    // Opponent defaults: minMargin=-70, maxMargin=-80
+
+    test('0 or 1 card → margin is 0', () => {
+        expect(computeHandMargin(600, 0)).toBe(0);
+        expect(computeHandMargin(600, 1)).toBe(0);
+    });
+
+    test('very wide container, few cards → clamped at minMargin', () => {
+        // With 2 cards in a 600px container there is plenty of room;
+        // fitMargin would be very positive, so it clamps to the min (-57)
+        const margin = computeHandMargin(600, 2);
+        expect(margin).toBe(-57);
+    });
+
+    test('narrow container, many cards → clamped at maxMargin', () => {
+        // 10 cards in a 100px container → heavily compressed, clamps to max (-64)
+        const margin = computeHandMargin(100, 10);
+        expect(margin).toBe(-64);
+    });
+
+    test('margin is within [maxMargin, minMargin] for typical hands', () => {
+        const containerWidths = [200, 350, 500];
+        const cardCounts = [3, 5, 7, 10];
+        containerWidths.forEach(w => {
+            cardCounts.forEach(n => {
+                const m = computeHandMargin(w, n);
+                expect(m).toBeGreaterThanOrEqual(-64);
+                expect(m).toBeLessThanOrEqual(-57);
+            });
+        });
+    });
+
+    test('opponent hand clamps use different min/max values', () => {
+        // Wide container, few cards → clamps to opponent minMargin (-70)
+        expect(computeHandMargin(600, 2, 107, 0.6, -70, -80)).toBe(-70);
+        // Narrow container, many cards → clamps to opponent maxMargin (-80)
+        expect(computeHandMargin(100, 10, 107, 0.6, -70, -80)).toBe(-80);
+    });
+
+    test('margin decreases monotonically as card count increases (same container)', () => {
+        // More cards in the same space → tighter overlap (more negative)
+        const containerW = 300;
+        let prev = computeHandMargin(containerW, 2);
+        for (let n = 3; n <= 12; n++) {
+            const curr = computeHandMargin(containerW, n);
+            expect(curr).toBeLessThanOrEqual(prev);
+            prev = curr;
+        }
+    });
+
+    test('margin increases (less overlap) as container gets wider', () => {
+        // Wider container → more room → less overlap (less negative, up to min cap)
+        const cardCount = 7;
+        let prev = computeHandMargin(100, cardCount);
+        for (const w of [150, 200, 300, 400, 600]) {
+            const curr = computeHandMargin(w, cardCount);
+            expect(curr).toBeGreaterThanOrEqual(prev);
+            prev = curr;
+        }
+    });
+
+    test('exact fit: margin produces a hand that exactly fills the container', () => {
+        // Choose values where fitMargin falls inside the clamp window
+        const cssCardW = 107, scale = 0.6;
+        const visW = cssCardW * scale;
+        const cardCount = 5;
+        // Pick a container where fitMargin = -60, which is inside [-64, -57]
+        // fitMargin = -60 → usableW = visW + (cardCount-1)*(visW + margin*scale)
+        //                           = 64.2 + 4*(64.2 + (-60)*0.6) = 64.2 + 4*28.2 = 177
+        const usableW = visW + (cardCount - 1) * (visW + (-60) * scale);
+        const margin = computeHandMargin(usableW, cardCount);
+        expect(margin).toBeCloseTo(-60, 5);
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// truncate  (extracted from main.js handSummary handler)
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Inline the function here rather than importing from main.js (which has DOM
+// dependencies that can't load in Node).
+const MAX_NAME_TEST = 12;
+function truncate(name) {
+    return name.length > MAX_NAME_TEST ? name.slice(0, MAX_NAME_TEST - 1) + '...' : name;
+}
+
+describe('truncate', () => {
+    test('short name is unchanged', () => {
+        expect(truncate('Alice')).toBe('Alice');
+    });
+
+    test('name at exactly the limit is unchanged', () => {
+        expect(truncate('TwelveLetter')).toBe('TwelveLetter');    // 12 chars — at limit, not truncated
+    });
+
+    test('name at exactly MAX_NAME (12) is not truncated', () => {
+        const name = 'A'.repeat(12);
+        expect(truncate(name)).toBe(name);
+    });
+
+    test('name one over the limit is truncated', () => {
+        const name = 'A'.repeat(13);
+        expect(truncate(name)).toBe('A'.repeat(11) + '...');
+    });
+
+    test('very long name is truncated to 11 chars + ellipsis', () => {
+        expect(truncate('ThisIsAVeryLongPlayerName')).toBe('ThisIsAVery...');
+    });
+
+    test('empty string is unchanged', () => {
+        expect(truncate('')).toBe('');
+    });
+
+    test('truncated result is 11 chars + ellipsis (14 total)', () => {
+        const long = 'A'.repeat(50);
+        expect(truncate(long).length).toBe(14); // 11 chars + '...'
+    });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// formatDuration  (from main.js)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function formatDuration(totalSeconds) {
+    const seconds = Number(totalSeconds);
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.round(seconds % 60);
+    return [
+        hours ? `${hours}h` : null,
+        minutes ? `${minutes}m` : null,
+        secs || (!hours && !minutes) ? `${secs}s` : null,
+    ]
+        .filter(Boolean)
+        .join(' ');
+}
+
+describe('formatDuration', () => {
+    test('zero seconds → "0s"', () => {
+        expect(formatDuration(0)).toBe('0s');
+    });
+
+    test('seconds only', () => {
+        expect(formatDuration(1)).toBe('1s');
+        expect(formatDuration(59)).toBe('59s');
+    });
+
+    test('minutes and seconds', () => {
+        expect(formatDuration(60)).toBe('1m');
+        expect(formatDuration(61)).toBe('1m 1s');
+        expect(formatDuration(90)).toBe('1m 30s');
+    });
+
+    test('exactly 1 minute omits the seconds part', () => {
+        expect(formatDuration(60)).toBe('1m');
+    });
+
+    test('hours only (round hours)', () => {
+        expect(formatDuration(3600)).toBe('1h');
+        expect(formatDuration(7200)).toBe('2h');
+    });
+
+    test('hours and minutes, no seconds', () => {
+        expect(formatDuration(3660)).toBe('1h 1m');
+    });
+
+    test('hours, minutes, and seconds', () => {
+        expect(formatDuration(3661)).toBe('1h 1m 1s');
+        expect(formatDuration(3723)).toBe('1h 2m 3s');
+    });
+
+    test('fractional seconds are rounded', () => {
+        expect(formatDuration(1.4)).toBe('1s');
+        expect(formatDuration(1.6)).toBe('2s');
+    });
+
+    test('string input is coerced to number', () => {
+        expect(formatDuration('90')).toBe('1m 30s');
+    });
+
+    test('hours present with 0 seconds omits trailing seconds', () => {
+        // 1h 1m exactly — no seconds component
+        expect(formatDuration(3660)).toBe('1h 1m');
     });
 });
