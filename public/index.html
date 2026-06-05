@@ -37,6 +37,7 @@
                             <label><input type="checkbox" class="controlledCheckbox" name="stackDraw2" value="stackDraw2">Stack Draw 2s</label>
                             <label><input type="checkbox" class="controlledCheckbox" name="skipDraw2" value="skipDraw2">Skip Draw 2s</label>
                             <label><input type="checkbox" class="controlledCheckbox" name="reverseDraw2" value="reverseDraw2">Reverse Draw 2s</label>
+                            <label><input type="checkbox" class="controlledCheckbox" name="skipSkip" value="skipSkip">Skip a Skip</label>
                             <label><input type="checkbox" class="controlledCheckbox" name="stackDraw4" value="stackDraw4">Stack Draw 4s</label>
                             <label><input type="checkbox" class="controlledCheckbox" name="skipDraw4" value="skipDraw4">Skip Draw 4s</label>
                             <label><input type="checkbox" class="controlledCheckbox" name="reverseDraw4" value="reverseDraw4">Reverse Draw 4s</label>
@@ -66,6 +67,12 @@
                     <div id="player4" class="grid-item playerOpponent"></div>
                     <div id="player5" class="grid-item playerOpponent"></div>
                     <div id="player6" class="grid-item playerOpponent"></div>
+                    <div id="direction-indicator" class="direction-indicator">
+                        <div id="direction-arrow-wrap">
+                            <img id="direction-arrow" src="images/rotate-ccw.svg" alt="play direction" draggable="false"/>
+                            <span id="direction-count"></span>
+                        </div>
+                    </div>
                     <div id="playerSelf" class="grid-item playerSelf"></div>
                 </div>
 

@@ -25,6 +25,8 @@ let currentPlayer;       // socket ID of the player whose turn it is
 let currentColor;        // active card color
 let currentType;         // active card type (number, skip, etc.)
 let cardsToDraw = 0;     // accumulated cards a player must draw (from stacked draw 2s / draw 4s)
+let stackType = null;    // 'draw2' | 'draw4' | null — which draw type is currently being stacked
+let pendingSkipTarget = null; // socket ID of the player who is about to be skipped (null if no skip pending)
 let discardPile = [];
 let players = new Map(); // socket ID → player object
 let playersInLobby = []; // ordered list of player names, for the lobby display
@@ -47,6 +49,7 @@ let playWildDraw4 = false;  // allow Wild Draw 4 regardless of hand contents
 let stackDraw2 = false;     // next player can stack a Draw 2 on a Draw 2
 let skipDraw2 = false;      // next player can play a Skip to dodge a Draw 2
 let reverseDraw2 = false;   // next player can play a Reverse to dodge a Draw 2
+let skipSkip = false;       // targeted player can play a Skip to redirect a plain Skip
 let stackDraw4 = false;
 let skipDraw4 = false;
 let reverseDraw4 = false;
@@ -121,7 +124,7 @@ function onConnection(socket) {
                 playerA = nextSocket.id;
                 hostName = nextSocket.playerName;
                 io.to(nextSocket.id).emit('isPlayerA', { gameInProgress: !gameIsOver });
-                io.to(nextSocket.id).emit('updateOptions', { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, stackDraw4, skipDraw4, reverseDraw4 });
+                io.to(nextSocket.id).emit('updateOptions', { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, skipSkip, stackDraw4, skipDraw4, reverseDraw4 });
                 io.emit('setHost', hostName);
                 io.emit('newPlayer', { players: playersInLobby, host: hostName });
             }
@@ -190,6 +193,9 @@ function onConnection(socket) {
                 topCard: discardPile.length > 0 ? discardPile[discardPile.length - 1] : null,
                 gameIsOver: gameIsOver,
                 requiredPlay: requiredPlay,
+                stackType: stackType,
+                cardsToDraw: cardsToDraw,
+                playDirection: playDirection,
                 isHost: socket.id === playerA,
                 hostName: hostName,
                 playersInLobby: playersInLobby,
@@ -199,7 +205,7 @@ function onConnection(socket) {
             io.emit('logMessage', playerName + ' rejoined the game');
             if (socket.id === playerA) {
                 io.to(socket.id).emit('isPlayerA', { gameInProgress: !gameIsOver });
-                io.to(socket.id).emit('updateOptions', { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, stackDraw4, skipDraw4, reverseDraw4 });
+                io.to(socket.id).emit('updateOptions', { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, skipSkip, stackDraw4, skipDraw4, reverseDraw4 });
                 io.emit('setHost', hostName);
             }
             return;
@@ -304,82 +310,78 @@ function onConnection(socket) {
                 io.emit('logMessage', socket.playerName + ' played a ' + playColor + ' ' + playType);
 
                 // Defer the win check for draw/skip/reverse cards — the effect still needs to resolve
-                const isDefferedWin = (playType === 'draw2' || playType === 'draw4') ||
-                    ((playType === 'skip' || playType === 'reverse') && cardsToDraw > 0);
-                if (!isDefferedWin) {
+                const isDeferredWin = (playType === 'draw2' || playType === 'draw4') ||
+                    (playType === 'skip' || playType === 'reverse');
+                if (!isDeferredWin) {
                     checkForWin(socket.id);
                 }
 
                 if(playType == 'wild') {
                     player.WaitingForColorChoice = true;
                     io.to(socket.id).emit('chooseColor');
+
                 } else if(playType == 'draw4') {
                     cardsToDraw += 4;
+                    stackType = 'draw4';
+                    emitGameStatus();
                     player.WaitingForColorChoice = true;
-
-                    // Build the list of cards the next player is allowed to play
-                    requiredPlay = [];
-                    if(stackDraw4) requiredPlay.push('draw4');
-                    if(skipDraw4) requiredPlay.push('skip');
-                    if(reverseDraw4) requiredPlay.push('reverse');
+                    // requiredPlay will be set after color is chosen (in colorChosen handler)
                     io.to(socket.id).emit('chooseColor');
+
+                } else if(playType == 'draw2') {
+                    cardsToDraw += 2;
+                    stackType = 'draw2';
+                    emitGameStatus();
+                    if (players.get(socket.id).Hand.length === 0) {
+                        pendingWinnerSocketId = socket.id;
+                    }
+                    await nextTurn(true);
+                    await offerStack();
+
                 } else if(playType == 'skip' || (playType == 'reverse' && players.size == 2)) {
-                    // With 2 players, Reverse acts as a Skip
+                    // With 2 players, Reverse always acts as a Skip.
+                    // In both cases: the targeted player gets a chance to respond before being skipped.
                     if (players.get(socket.id).Hand.length === 0) {
                         pendingWinnerSocketId = socket.id;
                     }
 
-                    await nextTurn(true); // advance past the skipped player
-                    clearRequiredPlay();
-
-                    // If draw cards were stacked and a skip dodged them, deal them to the player after
                     if (cardsToDraw > 0) {
-                        await drawCards(currentPlayer, cardsToDraw);
-                        resolvePendingWin();
+                        // Mid-stack skip: the next player receives the draw queue (they are the one
+                        // being skipped onto). One advance puts us on that player.
+                        await nextTurn(true);  // move to the player who receives the draws
+                        await offerStack();
+                    } else {
+                        // Plain skip (no draw queue): give the targeted player a chance to respond.
+                        await nextTurn(true);          // move turn to the targeted player
+                        pendingSkipTarget = currentPlayer;
+                        await offerSkipResponse();
                     }
-                    nextTurn();
+
                 } else if(playType == 'reverse') {
                     if (players.get(socket.id).Hand.length === 0) {
                         pendingWinnerSocketId = socket.id;
                     }
 
-                    playDirection = -playDirection;
-                    await nextTurn(true);
-                    clearRequiredPlay();
-
-                    // If draw cards were stacked and a reverse dodged them, deal them to the new next player
-                    if(cardsToDraw > 0) {
-                        await drawCards(currentPlayer, cardsToDraw);
-                        resolvePendingWin();
-                        nextTurn();
+                    if (cardsToDraw > 0) {
+                        playDirection = -playDirection;
+                        emitGameStatus();
+                        await nextTurn(true);
+                        await offerStack();
                     } else {
+                        playDirection = -playDirection;
+                        emitGameStatus();
+                        await nextTurn(true);
                         resolvePendingWin();
-                        if(!gameIsOver && !canPlay(currentPlayer, ['none'])) {
-                            autoDraw(currentPlayer);
+                        if (!gameIsOver) {
+                            if (!canPlay(currentPlayer, ['none'])) {
+                                autoDraw(currentPlayer);
+                            }
+                            clearRequiredPlay();
+                            io.emit('turnChange', players.get(currentPlayer).PlayerID);
+                            turnStartTime = Date.now();
                         }
                     }
-                } else if(playType == 'draw2') {
-                    cardsToDraw += 2;
-                    if (players.get(socket.id).Hand.length === 0) {
-                        pendingWinnerSocketId = socket.id;
-                    }
-                    await nextTurn(true);
 
-                    // Build the list of cards the next player is allowed to play (stack, skip, or reverse)
-                    requiredPlay = [];
-                    if(stackDraw2) requiredPlay.push('draw2');
-                    if(skipDraw2) requiredPlay.push('skip');
-                    if(reverseDraw2) requiredPlay.push('reverse');
-                    io.to(currentPlayer).emit('requiredPlay', requiredPlay);
-
-                    // If the next player has nothing to stack with, they draw immediately
-                    let tempArray = cardList.filter(item => !requiredPlay.includes(item));
-                    if(!canPlay(currentPlayer, tempArray)) {
-                        await drawCards(currentPlayer, cardsToDraw);
-                        clearRequiredPlay();
-                        resolvePendingWin();
-                        nextTurn();
-                    }
                 } else {
                     // Numbered card — just advance the turn
                     nextTurn();
@@ -405,26 +407,12 @@ function onConnection(socket) {
         io.emit('logMessage', 'The color was changed to ' + color);
 
         if(cardsToDraw > 0) {
-            // Wild Draw 4 path — resolve stacking before dealing cards
+            // Wild Draw 4 was just played — advance and offer the stack
             if (players.get(socket.id).Hand.length === 0) {
                 pendingWinnerSocketId = socket.id;
             }
             await nextTurn(true);
-
-            requiredPlay = [];
-            if(stackDraw4) requiredPlay.push('draw4');
-            if(skipDraw4) requiredPlay.push('skip');
-            if(reverseDraw4) requiredPlay.push('reverse');
-            io.emit('requiredPlay', requiredPlay);
-
-            let tempArray = cardList.filter(item => !requiredPlay.includes(item));
-
-            if(!canPlay(currentPlayer, tempArray)) {
-                await drawCards(currentPlayer, cardsToDraw);
-                clearRequiredPlay();
-                resolvePendingWin();
-                nextTurn();
-            }
+            await offerStack();
         } else {
             // Plain wild — color is set, just move on
             nextTurn();
@@ -497,16 +485,18 @@ function onConnection(socket) {
         stackDraw2 = selectedOptions.includes('stackDraw2');
         skipDraw2 = selectedOptions.includes('skipDraw2');
         reverseDraw2 = selectedOptions.includes('reverseDraw2');
+        skipSkip = selectedOptions.includes('skipSkip');
         stackDraw4 = selectedOptions.includes('stackDraw4');
         skipDraw4 = selectedOptions.includes('skipDraw4');
         reverseDraw4 = selectedOptions.includes('reverseDraw4');
 
-        const allOptions = { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, stackDraw4, skipDraw4, reverseDraw4 };
+        const allOptions = { playWildDraw4, stackDraw2, skipDraw2, reverseDraw2, skipSkip, stackDraw4, skipDraw4, reverseDraw4 };
         io.emit('updateOptions', allOptions);
 
         const optionLabels = {
             playWildDraw4: 'Play Wild Draw 4 any time',
             stackDraw2: 'Stack Draw 2s', skipDraw2: 'Skip Draw 2s', reverseDraw2: 'Reverse Draw 2s',
+            skipSkip: 'Skip a Skip',
             stackDraw4: 'Stack Draw 4s', skipDraw4: 'Skip Draw 4s', reverseDraw4: 'Reverse Draw 4s',
         };
         io.emit('optionsChanged', { changedBy: socket.playerName, options: allOptions, labels: optionLabels });
@@ -599,6 +589,101 @@ function performDraw(player) {
     io.emit('cardDrawn');
 }
 
+// ── Stacking helpers ──────────────────────────────────────────────────────────
+
+// Build the list of card types the current player is allowed to play given the
+// active stack.  stackType must already be set before calling this.
+// For a draw2 stack: more draw2s, and (if enabled) skips and reverses.
+// For a draw4 stack: more draw4s, and (if enabled) skips and reverses.
+function buildRequiredPlay() {
+    const rp = [];
+    if (stackType === 'draw2') {
+        if (stackDraw2)   rp.push('draw2');
+        if (skipDraw2)    rp.push('skip');
+        if (reverseDraw2) rp.push('reverse');
+    } else if (stackType === 'draw4') {
+        if (stackDraw4)   rp.push('draw4');
+        if (skipDraw4)    rp.push('skip');
+        if (reverseDraw4) rp.push('reverse');
+    }
+    return rp;
+}
+
+// After a draw card (or a skip/reverse mid-stack) has been played and the turn
+// has already been advanced to the new current player, check if that player can
+// respond.  If they can, set requiredPlay so they know what they must play.
+// If they can't, immediately deal the accumulated draws and advance the turn.
+async function offerStack() {
+    if (gameIsOver) return;
+
+    requiredPlay = buildRequiredPlay();
+
+    // If no stacking options are enabled at all, or the active player has none,
+    // resolve the stack immediately.
+    const hasStackOption = requiredPlay.length > 0;
+    const tempExclude = cardList.filter(item => !requiredPlay.includes(item));
+    const playerCanStack = hasStackOption && canPlay(currentPlayer, tempExclude);
+
+    if (!playerCanStack) {
+        // No stack possible — deal the cards now
+        await drawCards(currentPlayer, cardsToDraw);
+        stackType = null;
+        clearRequiredPlay();
+        resolvePendingWin();
+        nextTurn();
+    } else {
+        // Give the player the option to respond
+        io.to(currentPlayer).emit('requiredPlay', requiredPlay);
+        io.emit('turnChange', players.get(currentPlayer).PlayerID);
+        turnStartTime = Date.now();
+    }
+}
+
+// After a plain skip (no draw queue) has been played and the turn has been
+// advanced to the targeted player, check if that player has a skip to respond
+// with.  If they do, give them their turn normally (with skip as a required
+// play).  If they don't, skip them immediately.
+async function offerSkipResponse() {
+    if (gameIsOver) return;
+
+    // The player can respond with a skip (or reverse in 2-player) to redirect.
+    const skipsAvailable = [];
+    if (skipSkip) skipsAvailable.push('skip');
+    // In 2-player, reverse acts as a skip — allow it as a redirect too
+    if (players.size == 2 && skipSkip) skipsAvailable.push('reverse');
+
+    const tempExclude = cardList.filter(item => !skipsAvailable.includes(item));
+    const canRespond = skipsAvailable.length > 0 && canPlay(currentPlayer, tempExclude);
+
+    if (!canRespond) {
+        // Skipped player has nothing — skip them and move on
+        pendingSkipTarget = null;
+        clearRequiredPlay();
+        resolvePendingWin();
+        if (!gameIsOver) {
+            await nextTurn(true);
+            clearRequiredPlay();
+            if (!canPlay(currentPlayer, ['none'])) {
+                autoDraw(currentPlayer);
+            }
+            io.emit('turnChange', players.get(currentPlayer).PlayerID);
+            turnStartTime = Date.now();
+        }
+    } else {
+        // Give the targeted player a chance to respond
+        requiredPlay = skipsAvailable;
+        io.to(currentPlayer).emit('requiredPlay', requiredPlay);
+        io.emit('turnChange', players.get(currentPlayer).PlayerID);
+        turnStartTime = Date.now();
+    }
+}
+
+// Broadcast current draw queue and play direction to all clients so the
+// direction indicator widget stays in sync.
+function emitGameStatus() {
+    io.emit('gameStatus', { cardsToDraw, playDirection });
+}
+
 // Draw a fixed number of cards for a player, with a staggered delay between each
 function drawCards(SocketID, num) {
     if (num <= 0) return Promise.resolve();
@@ -610,8 +695,9 @@ function drawCards(SocketID, num) {
     io.emit('logMessage', `${player.Name} drew ${num}${label}`);
 
     cardsToDraw = 0;
+    stackType = null;
+    emitGameStatus();
 
-    player.HasCalledUno = false;
     io.to(SocketID).emit('notCalledUnoMe');
 
     io.to(SocketID).emit('drawStart');
@@ -707,9 +793,11 @@ function discardCard(card, SocketID) {
     }
 }
 
-// Clear the required-play list and broadcast the update to all clients
+// Clear the required-play list and stack state, and broadcast the update to all clients
 function clearRequiredPlay() {
     requiredPlay = [];
+    stackType = null;
+    pendingSkipTarget = null;
     io.emit('requiredPlay', requiredPlay);
 }
 
@@ -748,10 +836,13 @@ async function nextTurn(skipAutoDraw = false) {
         if(!hasCard) {
             autoDraw(currentPlayer);
         }
+        // Only clear the stack state on a normal turn advance; when skipAutoDraw
+        // is true the caller (offerStack, offerSkipResponse, etc.) is responsible
+        // for managing requiredPlay and stackType.
+        clearRequiredPlay();
+        io.to(currentPlayer).emit('requiredPlay', requiredPlay);
     }
 
-    clearRequiredPlay();
-    io.to(currentPlayer).emit('requiredPlay', requiredPlay);
     io.emit('turnChange', nextID);
     turnStartTime = Date.now();
 }
@@ -761,11 +852,14 @@ async function startGame() {
     gameIsOver = false;
     playDirection = -1;
     cardsToDraw = 0;
+    stackType = null;
+    pendingSkipTarget = null;
     pendingWinnerSocketId = null;
     handStartTime = Date.now();
     handCardsPlayed = 0;
     discardPile = [];
     clearRequiredPlay();
+    emitGameStatus();
     io.emit('notCalledUnoMe');
     io.emit('colorChosen', 'red');
     io.emit('hideColor');

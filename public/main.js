@@ -78,6 +78,7 @@ socket.on('rejoinState', function(state) {
     isPlayerA = state.isHost;
     currentColor = state.currentColor;
     requiredPlay = state.requiredPlay || [];
+    updateDirectionIndicator(state.cardsToDraw || 0, state.playDirection || -1);
 
     for (let p of state.playerList) {
         if (p.SocketID === socketId) {
@@ -123,7 +124,7 @@ socket.on('rejoinState', function(state) {
         cardObj.id = 'discard';
         let discard = document.getElementById('discard');
         discard.parentNode.replaceChild(cardObj, discard);
-        applyWildOverlay(state.currentColor || null);
+        applyWildOverlay(state.topCard.Color === 'black' ? state.currentColor : null);
     }
 
     // Highlight the active player and refresh playable cards if it's our turn
@@ -183,6 +184,7 @@ socket.on('updateOptions', function(options) {
         stackDraw2:    'stackDraw2',
         skipDraw2:     'skipDraw2',
         reverseDraw2:  'reverseDraw2',
+        skipSkip:      'skipSkip',
         stackDraw4:    'stackDraw4',
         skipDraw4:     'skipDraw4',
         reverseDraw4:  'reverseDraw4',
@@ -271,13 +273,49 @@ socket.on('hideColor', function() {
 
 // Update which cards are playable when the server changes the required-play list
 socket.on('requiredPlay', list => {
-    const myTurn = document.getElementById('player_' + playerId).classList.contains('active');
+    if (playerId === -1) return; // not yet in a game, nothing to update
+    const playerEl = document.getElementById('player_' + playerId);
+    if (!playerEl) return;
+    const myTurn = playerEl.classList.contains('active');
     if (!myTurn) return;
 
     requiredPlay = list;
 
     const topCard = getTopCard();
     updatePlayableCards(topCard, currentColor);
+});
+
+// ── Direction / draw indicator ─────────────────────────────────────────────
+
+let lastDrawCount = 0;
+
+function updateDirectionIndicator(cardsToDraw, playDirection) {
+    const indicator = document.getElementById('direction-indicator');
+    const arrow     = document.getElementById('direction-arrow');
+    const countEl   = document.getElementById('direction-count');
+    if (!indicator || !arrow || !countEl) return;
+
+    arrow.src = playDirection >= 1 ? 'images/rotate-ccw.svg' : 'images/rotate-cw.svg';
+
+    if (cardsToDraw > 0) {
+        indicator.classList.add('draws-queued');
+        const newText = '+' + cardsToDraw;
+        if (cardsToDraw !== lastDrawCount) {
+            countEl.classList.remove('pulse');
+            void countEl.offsetWidth; // force reflow to restart animation
+            countEl.textContent = newText;
+            countEl.classList.add('pulse');
+        }
+    } else {
+        indicator.classList.remove('draws-queued');
+        countEl.textContent = '';
+        countEl.classList.remove('pulse');
+    }
+    lastDrawCount = cardsToDraw;
+}
+
+socket.on('gameStatus', function({ cardsToDraw, playDirection }) {
+    updateDirectionIndicator(cardsToDraw, playDirection);
 });
 
 socket.on('turnChange', function(PlayerID) {
@@ -845,7 +883,13 @@ function updatePlayableCards(topCard, currentColor) {
         let playable = false;
 
         if (mustPlaySpecific) {
-            playable = requiredPlay.includes(cardType) && (cardColor === currentColor || cardColor === 'black' || cardType === topCard.Type);
+            // The card must be one of the required types AND match color or type.
+            // Skips/reverses responding to a plain skip still need a color or type match.
+            if (requiredPlay.includes(cardType)) {
+                if (cardColor === currentColor || cardColor === 'black' || cardType === topCard.Type) {
+                    playable = true;
+                }
+            }
         } else {
             if (cardColor === currentColor) playable = true;
             if (cardType === topCard.Type) playable = true;
