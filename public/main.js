@@ -833,8 +833,8 @@ function repositionCards(player) {
             return;
         }
 
-        const MIN_MARGIN = -70;  // starting / minimum overlap (~65% visual)
-        const MAX_MARGIN = -80;  // maximum allowed overlap before container must expand (~75% visual)
+        const MIN_MARGIN = -82;  // starting / minimum overlap (~77% visual)
+        const MAX_MARGIN = -92;  // maximum allowed overlap before container must expand (~87% visual)
 
         const gridCell = hand.closest('.playerOpponent, .playerSelf');
         const containerW = (gridCell ? gridCell.offsetWidth : hand.offsetWidth) || 200;

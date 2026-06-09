@@ -3,6 +3,8 @@
 :root {
     --card-width: 107px;
     --card-height: 160px;
+    --pile-card-width: 88px;
+    --pile-card-height: 132px;
 
     --bg-page:      #f0ede8;
     --bg-surface:   #ffffff;
@@ -175,9 +177,8 @@ body {
     background-color: var(--bg-page);
     color: var(--text-primary);
     display: flex;
-    min-height: 100vh;
-    min-width: 0;
-    overflow-x: auto;
+    height: 100vh;
+    overflow: hidden;
 }
 
 /* ── Layout ── */
@@ -187,6 +188,9 @@ body {
     display: flex;
     flex-direction: column;
     min-width: 0;
+    overflow-x: auto;
+    overflow-y: auto;
+    height: 100vh;
     position: relative;
     z-index: 0;
 }
@@ -202,6 +206,7 @@ main {
 
 header {
     position: relative;
+    width: 100%;
 }
 
 header h1 {
@@ -214,6 +219,7 @@ header h1 {
     font-weight: 500;
     letter-spacing: 0.12em;
     text-transform: uppercase;
+    min-width: 100vw;
 }
 
 /* ── Buttons ── */
@@ -300,11 +306,11 @@ main #status {
 /* ── Player grid ── */
 
 .players {
-    width: 82%;
+    width: 76%;
     margin: 18px 0 0;
     display: grid;
-    grid-template-columns: max-content max-content minmax(107px, auto) minmax(107px, auto) 80px minmax(107px, auto) minmax(107px, auto) max-content max-content;
-    gap: 10px;
+    grid-template-columns: max-content max-content minmax(88px, auto) minmax(88px, auto) 56px minmax(88px, auto) minmax(88px, auto) max-content max-content;
+    gap: 6px;
     padding: 10px;
 }
 
@@ -324,8 +330,8 @@ main #status {
     grid-column: 3 / span 2;
     grid-row: 2 / span 2;
     position: relative;
-    min-width: var(--card-width);
-    min-height: var(--card-height);
+    min-width: var(--pile-card-width);
+    min-height: var(--pile-card-height);
     background: transparent;
     border: none;
 }
@@ -335,9 +341,9 @@ main #status {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    width: var(--card-width);
-    height: var(--card-height);
-    border-radius: 15px;
+    width: var(--pile-card-width);
+    height: var(--pile-card-height);
+    border-radius: 13px;
     background-image: url(images/quno.png);
     background-size: contain;
     background-repeat: no-repeat;
@@ -348,13 +354,12 @@ main #status {
     grid-column: 6 / span 2;
     grid-row: 2 / span 2;
     position: relative;
-    min-width: var(--card-width);
-    min-height: var(--card-height);
+    min-width: var(--pile-card-width);
+    min-height: var(--pile-card-height);
     background: transparent;
     border: none;
     overflow: visible;
 }
-
 
 #player4 { grid-column: 8 / span 2; grid-row: 2; }
 #player5 { grid-column: 1 / span 2; grid-row: 3; }
@@ -375,14 +380,14 @@ main #status {
 
 #direction-arrow-wrap {
     position: relative;
-    width: 72px;
-    height: 72px;
+    width: 52px;
+    height: 52px;
     flex-shrink: 0;
 }
 
 #direction-arrow {
-    width: 72px;
-    height: 72px;
+    width: 52px;
+    height: 52px;
     display: block;
     filter: invert(60%) sepia(0%) saturate(0%) brightness(80%);
     transition: filter 0.25s;
@@ -398,7 +403,7 @@ main #status {
     left: 50%;
     transform: translate(-50%, -50%);
     font-family: 'DM Mono', monospace;
-    font-size: 17px;
+    font-size: 14px;
     font-weight: 700;
     color: var(--text-secondary);
     transition: color 0.25s;
@@ -520,7 +525,8 @@ main .player .hand {
 main #discard.card {
     width: var(--card-width) !important;
     height: var(--card-height) !important;
-    transform: none !important;
+    transform: scale(0.82) !important;
+    transform-origin: center center !important;
     margin: 0 !important;
     padding: 0 !important;
     flex-shrink: 0;
