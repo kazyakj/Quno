@@ -23,7 +23,7 @@
             <main>
                 <div class="game-options">
                     <input type="button" id="btnOptions" class="game-btn" value="Options" onclick="showOptions()">
-                    <input type="button" id="btnStart" class="game-btn" value="Start New Match" onclick="resetGame()">
+                    <input type="button" id="btnStart" class="game-btn" value="Start New Match" onclick="showResetConfirm()">
                     <input type="button" id="btnDeal" class="game-btn" value="Deal New Hand" onclick="newHand()">
                     <input type="button" id="btnJoin" class="game-btn" value="Join" onclick="joinGame()">
                 </div>
@@ -104,6 +104,17 @@
                 <div class="modal-buttons">
                     <button id="confirmBoot" class="btn">Yes</button>
                     <button id="cancelBoot" class="btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="resetConfirmModal" class="modal">
+            <div class="modal-content">
+                <p><strong>Start a new match?</strong></p>
+                <p class="modal-warning">This will reset all player scores and match statistics. Current hand progress will be lost.</p>
+                <div class="modal-buttons">
+                    <button id="confirmReset" class="btn">Start New Match</button>
+                    <button id="cancelReset" class="btn" onclick="document.getElementById('resetConfirmModal').style.display='none'">Cancel</button>
                 </div>
             </div>
         </div>
