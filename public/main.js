@@ -18,6 +18,7 @@ let requiredPlay = [];       // card types this player must play on their turn (
 let playersInLobby = [];
 let gameInProgress = false;
 let isDrawing = false;       // true while the server is dealing cards to this player
+let matchEverStarted = false;
 
 const sidePanel = document.getElementById('side-panel');
 const collapseButton = document.getElementById('collapse-btn');
@@ -205,6 +206,7 @@ socket.on('gameStarted', function(playerList) {
     players = playerList.length;
     hide('waitingOverlay');
     gameInProgress = true;
+    matchEverStarted = true;
 
     playSound('audio/game-start.wav', 0.2);
 
@@ -1111,6 +1113,22 @@ function showBootModal(playerName) {
 
     cancelBtn.onclick = () => {
         modal.style.display = 'none';
+    };
+}
+
+// Show the reset confirmation modal before sending the reset request to the server
+function showResetConfirm() {
+    if (!matchEverStarted) {
+        resetGame();
+        return;
+    }
+
+    const modal = document.getElementById('resetConfirmModal');
+    modal.style.display = 'flex';
+
+    document.getElementById('confirmReset').onclick = () => {
+        modal.style.display = 'none';
+        resetGame();
     };
 }
 

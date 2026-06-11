@@ -900,3 +900,11 @@ hr {
     background: var(--border-medium);
     border-radius: 3px;
 }
+
+#resetConfirmModal .modal-content {
+    margin: auto;
+}
+
+.modal-warning {
+    margin-top: 8px;
+}

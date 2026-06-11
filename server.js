@@ -447,6 +447,7 @@ function onConnection(socket) {
             if (!recentlyGotUnoYou) {
                 io.emit('logMessage', socket.playerName + ' called Uno at the wrong time - oops!');
                 drawCards(socket.id, 2);
+                io.to(socket.id).emit('calledUnoMe');
             }
         }
     });
