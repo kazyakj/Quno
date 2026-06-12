@@ -693,6 +693,7 @@ hr {
 /* ── Side panel ── */
 
 .side-panel {
+
     width: 260px;
     min-width: 260px;
     background-color: var(--bg-surface);
@@ -701,6 +702,7 @@ hr {
     font-size: 13px;
     transition: width 0.25s ease, min-width 0.25s ease;
     display: flex;
+    flex-direction: column;
     height: 100vh;
     overflow-y: hidden;
     flex-shrink: 0;
@@ -713,6 +715,7 @@ hr {
     min-width: 34px;
 }
 .side-panel.collapsed .collapse-button { transform: rotate(180deg); }
+.side-panel.collapsed .config-container { display: none; }
 .side-panel.collapsed .message { display: none; }
 
 .collapse-button {
