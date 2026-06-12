@@ -708,6 +708,8 @@ hr {
     flex-shrink: 0;
     position: relative;
     z-index: 10;
+    padding-left: 5px;
+
 }
 
 .side-panel.collapsed {
@@ -715,8 +717,8 @@ hr {
     min-width: 34px;
 }
 .side-panel.collapsed .collapse-button { transform: rotate(180deg); }
-.side-panel.collapsed .config-container { display: none; }
-.side-panel.collapsed .message { display: none; }
+.side-panel.collapsed .panel-container { display: none; }
+/*.side-panel.collapsed .message { display: none; }*/
 
 .collapse-button {
     background: transparent;
@@ -910,4 +912,8 @@ hr {
 
 .modal-warning {
     margin-top: 8px;
+}
+
+.config-container {
+    padding-bottom: 10px;
 }

@@ -964,7 +964,6 @@ socket.on('discardCard', function(card, player) {
 
 socket.on('cardDrawn', function() {
     let f = document.getElementById("draw-sound")?.value ?? "audio/draw-card.wav";
-    console.info(`Playing draw sound ${f}`);
     playSound(f);
 });
 
